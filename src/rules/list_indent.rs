@@ -28,6 +28,7 @@ impl Rule for ListIndent {
     fn check(&self, doc: &mq_markdown::Markdown, source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         let mut expected_by_level: HashMap<u8, usize> = HashMap::new();
         let mut diagnostics = Vec::new();
+        let lines = crate::text::LineIndex::new(source);
 
         for node in &doc.nodes {
             let Node::List(list) = node else {
@@ -35,7 +36,7 @@ impl Rule for ListIndent {
                 continue;
             };
             let Some(position) = &list.position else { continue };
-            let Some((_, line)) = crate::text::numbered_lines(source).find(|(n, _)| *n == position.start.line) else {
+            let Some(line) = lines.get(position.start.line) else {
                 continue;
             };
             let indent = line.len() - line.trim_start().len();

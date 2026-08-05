@@ -28,10 +28,11 @@ impl Rule for NoTrailingPunctuationHeading {
             .unwrap_or_else(|| DEFAULT_PUNCTUATION.chars().collect());
 
         let mut diagnostics = Vec::new();
+        let lines = crate::text::LineIndex::new(source);
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Heading(heading) = node else { return };
             let Some(position) = &heading.position else { return };
-            let Some((_, line)) = crate::text::numbered_lines(source).find(|(n, _)| *n == position.start.line) else {
+            let Some(line) = lines.get(position.start.line) else {
                 return;
             };
             let trimmed = line.trim_end();

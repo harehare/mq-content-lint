@@ -32,13 +32,14 @@ impl Rule for UlStyle {
         let mut expected = options.get_str("style").and_then(style_char);
 
         let mut diagnostics = Vec::new();
+        let lines = crate::text::LineIndex::new(source);
         for node in &doc.nodes {
             let Node::List(list) = node else { continue };
             if list.ordered {
                 continue;
             }
             let Some(position) = &list.position else { continue };
-            let Some((_, line)) = crate::text::numbered_lines(source).find(|(n, _)| *n == position.start.line) else {
+            let Some(line) = lines.get(position.start.line) else {
                 continue;
             };
             let Some(marker) = line.trim_start().chars().next().filter(|c| "-*+".contains(*c)) else {

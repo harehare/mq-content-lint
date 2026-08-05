@@ -45,6 +45,7 @@ impl Rule for TablePipeStyle {
         let mut expected = config.rule_options(self.id()).get_str("style").map(str::to_string);
         let mut seen_lines = HashSet::new();
         let mut diagnostics = Vec::new();
+        let lines = crate::text::LineIndex::new(source);
 
         for node in &doc.nodes {
             let position = match node {
@@ -56,7 +57,7 @@ impl Rule for TablePipeStyle {
             if !seen_lines.insert(position.start.line) {
                 continue;
             }
-            let Some((_, line)) = crate::text::numbered_lines(source).find(|(n, _)| *n == position.start.line) else {
+            let Some(line) = lines.get(position.start.line) else {
                 continue;
             };
             let found = detect_style(line);
