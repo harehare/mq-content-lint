@@ -5,8 +5,9 @@
 //! table consistency, whitespace, link/image hygiene, required front matter — comprehensive
 //! coverage of [markdownlint](https://github.com/DavidAnson/markdownlint)'s rule set, expressed
 //! against mq's own node model instead of a bespoke rule engine. It is a separate tool from
-//! `mq-lint` (which lints `.mq` query scripts, not Markdown content) and from arbitrary
-//! user-supplied mq queries as rules, which is a later stage of this project.
+//! `mq-lint` (which lints `.mq` query scripts, not Markdown content). Beyond the 53 built-in
+//! rules, [`custom_rules`] lets a config file define its own rules as mq queries — the one
+//! capability neither markdownlint nor rumdl offer.
 //!
 //! ## Example
 //!
@@ -23,6 +24,7 @@
 //! ```
 
 pub mod config;
+pub mod custom_rules;
 pub mod fix;
 pub mod message;
 pub mod rules;

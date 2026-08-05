@@ -1,17 +1,21 @@
 use std::io::{self, Write};
 
-use mq_content_lint::Diagnostic;
+use crate::report_item::ReportItem;
 
 /// Writes a single JSON array, one element per linted file, each carrying that file's
-/// diagnostics. Rule ids and field names are stable across releases within a major version.
-pub(super) fn write_json_report(w: &mut impl Write, results: &[(String, Vec<Diagnostic>)]) -> io::Result<()> {
+/// diagnostics (built-in and custom-rule alike). Field names are stable across releases within a
+/// major version. `selector` is `null` for a custom rule (and for the handful of built-ins with
+/// no single corresponding mq selector) — there's no other field distinguishing a custom rule's
+/// diagnostic from a built-in's; matching `ruleId` against `mq-content-lint --list-rules`'
+/// output is the way to tell.
+pub(super) fn write_json_report(w: &mut impl Write, results: &[(String, Vec<ReportItem>)]) -> io::Result<()> {
     let report: Vec<serde_json::Value> = results
         .iter()
-        .map(|(file_label, diagnostics)| {
-            let diagnostics: Vec<serde_json::Value> = diagnostics
+        .map(|(file_label, items)| {
+            let diagnostics: Vec<serde_json::Value> = items
                 .iter()
-                .map(|diagnostic| {
-                    let range = diagnostic.range.map(|r| {
+                .map(|item| {
+                    let range = item.range().map(|r| {
                         serde_json::json!({
                             "startLine": r.start_line,
                             "startColumn": r.start_column,
@@ -21,11 +25,11 @@ pub(super) fn write_json_report(w: &mut impl Write, results: &[(String, Vec<Diag
                     });
 
                     serde_json::json!({
-                        "ruleId": diagnostic.rule_id().as_str(),
-                        "selector": diagnostic.rule_id().selector().map(|s| s.to_string()),
-                        "severity": diagnostic.severity.to_string(),
-                        "message": diagnostic.text(),
-                        "help": diagnostic.help(),
+                        "ruleId": item.rule_id(),
+                        "selector": item.selector().map(|s| s.to_string()),
+                        "severity": item.severity().to_string(),
+                        "message": item.text(),
+                        "help": item.help(),
                         "range": range,
                     })
                 })
@@ -54,8 +58,12 @@ mod tests {
     fn test_write_json_report_shape() {
         let source = "![](missing-alt.png)\n";
         let doc: mq_markdown::Markdown = source.parse().unwrap();
-        let diagnostics = Linter::with_default_rules().run(&doc, source, &LintConfig::default());
-        let results = vec![("test.md".to_string(), diagnostics)];
+        let items: Vec<ReportItem> = Linter::with_default_rules()
+            .run(&doc, source, &LintConfig::default())
+            .into_iter()
+            .map(ReportItem::from)
+            .collect();
+        let results = vec![("test.md".to_string(), items)];
 
         let mut buf = Vec::new();
         write_json_report(&mut buf, &results).unwrap();
@@ -71,10 +79,28 @@ mod tests {
 
     #[test]
     fn test_write_json_report_empty_diagnostics() {
-        let results = vec![("test.md".to_string(), Vec::new())];
+        let results: Vec<(String, Vec<ReportItem>)> = vec![("test.md".to_string(), Vec::new())];
         let mut buf = Vec::new();
         write_json_report(&mut buf, &results).unwrap();
         let json: serde_json::Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
         assert_eq!(json[0]["diagnostics"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_write_json_report_custom_rule_has_null_selector() {
+        let item = ReportItem::Custom(mq_content_lint::custom_rules::CustomDiagnostic {
+            rule_id: "no_todo".to_string(),
+            message: "found a TODO".to_string(),
+            severity: mq_content_lint::Severity::Warning,
+            range: None,
+        });
+        let results = vec![("test.md".to_string(), vec![item])];
+        let mut buf = Vec::new();
+        write_json_report(&mut buf, &results).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
+        let diag = &json[0]["diagnostics"][0];
+        assert_eq!(diag["ruleId"], "no_todo");
+        assert!(diag["selector"].is_null());
+        assert_eq!(diag["message"], "found a TODO");
     }
 }
