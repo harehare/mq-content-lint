@@ -23,11 +23,12 @@ impl Rule for NoMissingSpaceClosedAtx {
 
     fn check(&self, doc: &mq_markdown::Markdown, source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
+        let lines = crate::text::LineIndex::new(source);
 
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Heading(heading) = node else { return };
             let Some(position) = &heading.position else { return };
-            let Some((_, line)) = crate::text::numbered_lines(source).find(|(n, _)| *n == position.start.line) else {
+            let Some(line) = lines.get(position.start.line) else {
                 return;
             };
             let trimmed_end = line.trim_end();

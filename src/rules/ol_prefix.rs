@@ -37,6 +37,7 @@ impl Rule for OlPrefix {
     fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         let forced_style = config.rule_options(self.id()).get_str("style").map(str::to_string);
         let mut diagnostics = Vec::new();
+        let lines = crate::text::LineIndex::new(source);
 
         let mut i = 0;
         while i < doc.nodes.len() {
@@ -56,8 +57,7 @@ impl Rule for OlPrefix {
                     break;
                 }
                 if let Some(position) = &list.position
-                    && let Some((_, line)) =
-                        crate::text::numbered_lines(source).find(|(n, _)| *n == position.start.line)
+                    && let Some(line) = lines.get(position.start.line)
                     && let Some(prefix) = parse_prefix(line)
                 {
                     items.push((position.start.line, prefix));

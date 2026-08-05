@@ -39,11 +39,12 @@ impl Rule for ListMarkerSpace {
             .get_usize("spaces")
             .unwrap_or(DEFAULT_SPACES);
         let mut diagnostics = Vec::new();
+        let lines = crate::text::LineIndex::new(source);
 
         for node in &doc.nodes {
             let Node::List(list) = node else { continue };
             let Some(position) = &list.position else { continue };
-            let Some((_, line)) = crate::text::numbered_lines(source).find(|(n, _)| *n == position.start.line) else {
+            let Some(line) = lines.get(position.start.line) else {
                 continue;
             };
             let indent = line.len() - line.trim_start().len();

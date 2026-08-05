@@ -28,6 +28,7 @@ impl Rule for UlIndent {
             .get_usize("indent")
             .unwrap_or(DEFAULT_INDENT);
         let mut diagnostics = Vec::new();
+        let lines = crate::text::LineIndex::new(source);
 
         for node in &doc.nodes {
             let Node::List(list) = node else { continue };
@@ -35,7 +36,7 @@ impl Rule for UlIndent {
                 continue;
             }
             let Some(position) = &list.position else { continue };
-            let Some((_, line)) = crate::text::numbered_lines(source).find(|(n, _)| *n == position.start.line) else {
+            let Some(line) = lines.get(position.start.line) else {
                 continue;
             };
             let indent = line.len() - line.trim_start().len();

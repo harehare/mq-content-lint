@@ -33,6 +33,7 @@ impl Rule for CodeFenceStyle {
             .get_str("style")
             .and_then(configured_char);
         let mut diagnostics = Vec::new();
+        let lines = crate::text::LineIndex::new(source);
 
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Code(code) = node else { return };
@@ -40,7 +41,7 @@ impl Rule for CodeFenceStyle {
                 return;
             }
             let Some(position) = &code.position else { return };
-            let Some((_, line)) = crate::text::numbered_lines(source).find(|(n, _)| *n == position.start.line) else {
+            let Some(line) = lines.get(position.start.line) else {
                 return;
             };
             let Some(found) = line.trim_start().chars().next().filter(|c| *c == '`' || *c == '~') else {

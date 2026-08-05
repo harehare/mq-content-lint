@@ -21,11 +21,12 @@ impl Rule for HrStyle {
     fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         let mut expected = config.rule_options(self.id()).get_str("style").map(str::to_string);
         let mut diagnostics = Vec::new();
+        let lines = crate::text::LineIndex::new(source);
 
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::HorizontalRule(_) = node else { return };
             let Some(position) = node.position() else { return };
-            let Some((_, line)) = crate::text::numbered_lines(source).find(|(n, _)| *n == position.start.line) else {
+            let Some(line) = lines.get(position.start.line) else {
                 return;
             };
             let found = line.trim().to_string();
