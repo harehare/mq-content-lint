@@ -1,15 +1,14 @@
-//! Fixture-driven tests for the three built-in rules.
+//! Fixture-driven tests for the three original built-in rules (`heading_hierarchy_skip`,
+//! `image_missing_alt`, `missing_front_matter_key`).
 //!
-//! Each rule under `tests/fixtures/<rule>/` has three files:
+//! Each has three fixture files under `tests/fixtures/<rule>/`:
 //! - `ok.md`: triggers no diagnostics for that rule.
 //! - `bad.md`: triggers the rule, with a fix a human could plausibly apply.
 //! - `not_autofixable.md`: triggers the rule in a case where there is no single correct
 //!   mechanical fix (ambiguous heading levels, no data to derive alt text from, no way to
-//!   invent required front matter content). `mq-content-lint` has no `--fix` flag and
-//!   `Diagnostic` carries no machine-applicable rewrite at all (see `mq_content_lint::Diagnostic`
-//!   docs) — every diagnostic is equally "not autofixable" by construction — so this fixture
-//!   exists to document, with a concrete example, *why* that's the right design for this rule
-//!   rather than a gap to fill in later.
+//!   invent required front matter content) — these three rules never populate
+//!   [`mq_content_lint::Diagnostic::fix`], unlike many of the later markdownlint-equivalent
+//!   rules added since, which do support `--fix` where the correct rewrite is unambiguous.
 
 use std::path::Path;
 
@@ -26,7 +25,7 @@ fn fixture(rule_dir: &str, file: &str) -> String {
 fn diagnostics_for(rule_id: RuleId, markdown: &str, config: &LintConfig) -> Vec<mq_content_lint::Diagnostic> {
     let doc: mq_markdown::Markdown = markdown.parse().expect("fixture must be valid markdown");
     Linter::with_default_rules()
-        .run(&doc, config)
+        .run(&doc, markdown, config)
         .into_iter()
         .filter(|d| d.rule_id() == rule_id)
         .collect()
@@ -57,6 +56,7 @@ mod heading_hierarchy_skip {
         let diagnostics = diagnostics_for(RULE, &fixture(DIR, "not_autofixable.md"), &LintConfig::default());
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].text().contains("h2 to h5"));
+        assert!(diagnostics[0].fix.is_none());
     }
 }
 
@@ -78,6 +78,7 @@ mod image_missing_alt {
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].text().contains("missing-alt.png"));
         assert_eq!(diagnostics[0].range.unwrap().start_line, 3);
+        assert!(diagnostics[0].fix.is_none());
     }
 
     #[test]
@@ -127,38 +128,20 @@ mod missing_front_matter_key {
     }
 }
 
-/// Every diagnostic in this crate is reported "as is" — there is no `Fix`/rewrite type and no
-/// CLI `--fix` flag anywhere in the public API, so every finding across all three fixture sets
-/// is, by construction, one a human must resolve.
-#[test]
-fn no_diagnostic_type_exposes_a_machine_applicable_fix() {
-    let doc: mq_markdown::Markdown = fixture("heading_hierarchy_skip", "bad.md").parse().unwrap();
-    let diagnostics = Linter::with_default_rules().run(&doc, &LintConfig::default());
-    assert!(!diagnostics.is_empty());
-    // `Diagnostic` has exactly three fields: `message`, `severity`, `range`. If a `fix` field
-    // is ever added, this destructure forces this test (and its surrounding claim) to be
-    // updated deliberately rather than silently going stale.
-    let mq_content_lint::Diagnostic {
-        message: _,
-        severity: _,
-        range: _,
-    } = diagnostics.into_iter().next().unwrap();
-}
-
 /// Rule ids and mq selectors are part of the stable, documented output surface (config keys,
-/// JSON/SARIF `ruleId`), so pin their exact strings here.
+/// JSON/SARIF `ruleId`), so pin the exact strings for the three original rules here.
 #[test]
 fn rule_ids_and_selectors_are_stable() {
     assert_eq!(RuleId::HeadingHierarchySkip.as_str(), "heading_hierarchy_skip");
-    assert_eq!(RuleId::HeadingHierarchySkip.selector().to_string(), ".h");
+    assert_eq!(RuleId::HeadingHierarchySkip.selector().unwrap().to_string(), ".h");
     assert_eq!(RuleId::ImageMissingAlt.as_str(), "image_missing_alt");
-    assert_eq!(RuleId::ImageMissingAlt.selector().to_string(), ".image");
+    assert_eq!(RuleId::ImageMissingAlt.selector().unwrap().to_string(), ".image");
     assert_eq!(RuleId::MissingFrontMatterKey.as_str(), "missing_front_matter_key");
-    assert_eq!(RuleId::MissingFrontMatterKey.selector().to_string(), ".yaml");
+    assert_eq!(RuleId::MissingFrontMatterKey.selector().unwrap().to_string(), ".yaml");
 }
 
 /// With no config file, linting the same document twice must produce byte-identical
-/// diagnostics (same rule ids, same order, same positions) — the "decisiona are deterministic
+/// diagnostics (same rule ids, same order, same positions) — the "decisions are deterministic
 /// with no config" acceptance bar.
 #[test]
 fn default_rules_run_deterministically_with_no_config() {
@@ -172,8 +155,8 @@ fn default_rules_run_deterministically_with_no_config() {
     let config = LintConfig::default();
     let linter = Linter::with_default_rules();
 
-    let first = linter.run(&doc, &config);
-    let second = linter.run(&doc, &config);
+    let first = linter.run(&doc, &markdown, &config);
+    let second = linter.run(&doc, &markdown, &config);
     assert_eq!(first, second);
     assert!(!first.is_empty());
 }

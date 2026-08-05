@@ -79,7 +79,7 @@ impl Rule for MissingFrontMatterKey {
         Severity::Error
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         if config.required_front_matter_keys.is_empty() {
             return Vec::new();
         }
@@ -142,7 +142,7 @@ mod tests {
                 .join(", ")
         ))
         .unwrap();
-        MissingFrontMatterKey.check(&doc, &config)
+        MissingFrontMatterKey.check(&doc, markdown, &config)
     }
 
     #[test]

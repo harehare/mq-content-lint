@@ -35,6 +35,13 @@ struct Cli {
     #[arg(long)]
     list_rules: bool,
 
+    /// Rewrite files in place, applying every diagnostic with a machine-applicable fix in a
+    /// single pass (reads stdin if no files are given, writing the fixed content to stdout).
+    /// Diagnostics are not recomputed between fixes; run again to pick up anything a fix
+    /// exposed.
+    #[arg(long)]
+    fix: bool,
+
     /// Diagnostic output format
     #[arg(long, value_enum, default_value_t)]
     format: OutputFormat,
@@ -96,6 +103,13 @@ fn run() -> io::Result<bool> {
     if cli.files.is_empty() {
         let mut content = String::new();
         io::stdin().read_to_string(&mut content)?;
+
+        if cli.fix {
+            let (fixed, _) = fix_source(&content, &linter, &config)?;
+            write!(w, "{fixed}")?;
+            return Ok(false);
+        }
+
         let diagnostics = lint_content(&content, &linter, &config, min_severity)?;
         let had_diagnostics = !diagnostics.is_empty();
         format::write_report(&mut w, cli.format, &[("<stdin>".to_string(), diagnostics)])?;
@@ -114,6 +128,29 @@ fn run() -> io::Result<bool> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| io::Error::other(format!("reading file {}: {}", path.display(), e)))?;
         let label = path.display().to_string();
+
+        let content = if cli.fix {
+            let (fixed, fix_count) = fix_source(&content, &linter, &config)
+                .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
+            if fixed != content {
+                std::fs::write(path, &fixed)
+                    .map_err(|e| io::Error::other(format!("writing file {}: {}", path.display(), e)))?;
+                let issue_word = if fix_count == 1 { "issue" } else { "issues" };
+                if cli.format == OutputFormat::Text {
+                    writeln!(
+                        w,
+                        "{} {fix_count} {issue_word} in {label}",
+                        "fixed".bright_green().bold()
+                    )?;
+                } else {
+                    eprintln!("fixed {fix_count} {issue_word} in {label}");
+                }
+            }
+            fixed
+        } else {
+            content
+        };
+
         let diagnostics = lint_content(&content, &linter, &config, min_severity)
             .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
         results.push((label, diagnostics));
@@ -136,10 +173,25 @@ fn lint_content(
         .parse()
         .map_err(|e: miette::Error| io::Error::other(e.to_string()))?;
     Ok(linter
-        .run(&doc, config)
+        .run(&doc, content, config)
         .into_iter()
         .filter(|d| d.severity >= min_severity)
         .collect())
+}
+
+/// Applies every diagnostic with a fix to `content` in a single pass, returning the rewritten
+/// text and how many fixes were applied.
+fn fix_source(content: &str, linter: &Linter, config: &LintConfig) -> io::Result<(String, usize)> {
+    let doc: mq_markdown::Markdown = content
+        .parse()
+        .map_err(|e: miette::Error| io::Error::other(e.to_string()))?;
+    let fixes: Vec<mq_content_lint::Fix> = linter
+        .run(&doc, content, config)
+        .into_iter()
+        .filter_map(|d| d.fix)
+        .collect();
+    let fix_count = fixes.len();
+    Ok((mq_content_lint::fix::apply_fixes(content, &fixes), fix_count))
 }
 
 /// Directory names that are never worth descending into when discovering Markdown files.
@@ -190,12 +242,17 @@ fn list_rules(w: &mut impl Write) -> io::Result<()> {
     let mut rules = mq_content_lint::rules::all_rules();
     rules.sort_by_key(|r| r.id());
     for rule in &rules {
+        let selector = rule
+            .id()
+            .selector()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string());
         writeln!(
             w,
-            "{:<28} {:<8} {}",
+            "{:<34} {:<8} {}",
             rule.id().as_str().bright_cyan(),
             rule.default_severity().to_string(),
-            rule.id().selector().to_string().dimmed(),
+            selector.dimmed(),
         )?;
     }
     Ok(())
@@ -236,6 +293,14 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[test]
+    fn test_cli_fix_flag() {
+        let cli = Cli::try_parse_from(["mq-content-lint", "--fix", "test.md"]).unwrap();
+        assert!(cli.fix);
+        let cli = Cli::try_parse_from(["mq-content-lint", "test.md"]).unwrap();
+        assert!(!cli.fix);
+    }
+
     #[rstest]
     #[case(vec!["mq-content-lint"], OutputFormat::Text)]
     #[case(vec!["mq-content-lint", "--format", "text"], OutputFormat::Text)]
@@ -260,6 +325,24 @@ mod tests {
         assert_eq!(diagnostics.len(), 1);
         let none = lint_content("# ok\n", &linter, &config, Severity::Error).unwrap();
         assert!(none.is_empty());
+    }
+
+    #[test]
+    fn test_fix_source_applies_fixes_in_one_pass() {
+        let linter = Linter::with_default_rules();
+        let config = LintConfig::default();
+        let (fixed, count) = fix_source("#Title\n", &linter, &config).unwrap();
+        assert_eq!(fixed, "# Title\n");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_fix_source_is_a_noop_when_nothing_is_fixable() {
+        let linter = Linter::with_default_rules();
+        let config = LintConfig::default();
+        let (fixed, count) = fix_source("# Title\n", &linter, &config).unwrap();
+        assert_eq!(fixed, "# Title\n");
+        assert_eq!(count, 0);
     }
 
     #[test]

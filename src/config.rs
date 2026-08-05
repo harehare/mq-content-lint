@@ -16,21 +16,54 @@ use crate::{RuleId, Severity};
 /// and when auto-discovered by walking up from the linted file's directory.
 pub const CONFIG_FILE_NAME: &str = "mq-content-lint.toml";
 
-/// Per-rule setting: either a plain enable/disable flag, or a severity override (which also
-/// implies the rule is enabled).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+/// Per-rule setting. The plain forms (`true`/`false`/a severity string) are shorthand for "use
+/// this rule's own default options"; the table form additionally carries rule-specific keys
+/// (e.g. `line_length = { limit = 100 }`), read back out via [`RuleOptions`]'s typed accessors.
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum RuleSetting {
     Enabled(bool),
     Severity(Severity),
+    Options(RuleOptions),
 }
 
+/// A rule's resolved settings: whether it's enabled, an optional severity override, and
+/// whatever rule-specific keys were given in its config table (e.g. `style`, `limit`,
+/// `required_keys`). Each rule interprets its own keys via the `get_*` accessors below and
+/// falls back to its own hardcoded default when a key is absent — there is no separate "schema"
+/// enforced here, so an unrecognized key inside a rule's table is silently ignored rather than
+/// rejected (unlike an unrecognized *rule name*, which is a hard config error).
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default, deny_unknown_fields, rename_all = "snake_case")]
-struct RulesTable {
-    heading_hierarchy_skip: Option<RuleSetting>,
-    image_missing_alt: Option<RuleSetting>,
-    missing_front_matter_key: Option<RuleSetting>,
+#[serde(default)]
+pub struct RuleOptions {
+    enabled: Option<bool>,
+    severity: Option<Severity>,
+    #[serde(flatten)]
+    extra: toml::Table,
+}
+
+impl RuleOptions {
+    pub fn get_bool(&self, key: &str) -> Option<bool> {
+        self.extra.get(key).and_then(toml::Value::as_bool)
+    }
+
+    pub fn get_usize(&self, key: &str) -> Option<usize> {
+        self.extra
+            .get(key)
+            .and_then(toml::Value::as_integer)
+            .and_then(|i| usize::try_from(i).ok())
+    }
+
+    pub fn get_str(&self, key: &str) -> Option<&str> {
+        self.extra.get(key).and_then(toml::Value::as_str)
+    }
+
+    pub fn get_str_array(&self, key: &str) -> Option<Vec<String>> {
+        self.extra
+            .get(key)?
+            .as_array()
+            .map(|values| values.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -43,7 +76,8 @@ struct FrontMatterTable {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct FileConfig {
-    rules: RulesTable,
+    #[serde(default)]
+    rules: HashMap<String, RuleSetting>,
     front_matter: FrontMatterTable,
 }
 
@@ -62,6 +96,8 @@ pub enum ConfigError {
         #[source]
         source: Box<toml::de::Error>,
     },
+    #[error("{path}: unknown rule `{rule}` in [rules] table")]
+    UnknownRule { path: PathBuf, rule: String },
 }
 
 /// Resolved linter configuration.
@@ -77,27 +113,29 @@ pub struct LintConfig {
 
 impl LintConfig {
     /// Parses a `mq-content-lint.toml` document from a string.
-    pub fn from_toml_str(toml_str: &str) -> Result<Self, Box<toml::de::Error>> {
-        let file: FileConfig = toml::from_str(toml_str).map_err(Box::new)?;
-        Ok(Self::from_file_config(file))
+    pub fn from_toml_str(toml_str: &str) -> Result<Self, ConfigError> {
+        Self::from_toml_str_at(toml_str, Path::new("<string>"))
     }
 
-    fn from_file_config(file: FileConfig) -> Self {
-        let mut rules = HashMap::new();
-        if let Some(setting) = file.rules.heading_hierarchy_skip {
-            rules.insert(RuleId::HeadingHierarchySkip, setting);
-        }
-        if let Some(setting) = file.rules.image_missing_alt {
-            rules.insert(RuleId::ImageMissingAlt, setting);
-        }
-        if let Some(setting) = file.rules.missing_front_matter_key {
-            rules.insert(RuleId::MissingFrontMatterKey, setting);
+    fn from_toml_str_at(toml_str: &str, path: &Path) -> Result<Self, ConfigError> {
+        let file: FileConfig = toml::from_str(toml_str).map_err(|source| ConfigError::Parse {
+            path: path.to_path_buf(),
+            source: Box::new(source),
+        })?;
+
+        let mut rules = HashMap::with_capacity(file.rules.len());
+        for (name, setting) in file.rules {
+            let rule_id = name.parse::<RuleId>().map_err(|_| ConfigError::UnknownRule {
+                path: path.to_path_buf(),
+                rule: name,
+            })?;
+            rules.insert(rule_id, setting);
         }
 
-        Self {
+        Ok(Self {
             rules,
             required_front_matter_keys: file.front_matter.required_keys,
-        }
+        })
     }
 
     /// Loads and parses a config file at an explicit path.
@@ -106,10 +144,7 @@ impl LintConfig {
             path: path.to_path_buf(),
             source,
         })?;
-        Self::from_toml_str(&content).map_err(|source| ConfigError::Parse {
-            path: path.to_path_buf(),
-            source,
-        })
+        Self::from_toml_str_at(&content, path)
     }
 
     /// Walks up from `start_dir` looking for [`CONFIG_FILE_NAME`], loading the first one found.
@@ -137,6 +172,7 @@ impl LintConfig {
     pub fn is_rule_enabled(&self, rule_id: RuleId) -> bool {
         match self.rules.get(&rule_id) {
             Some(RuleSetting::Enabled(enabled)) => *enabled,
+            Some(RuleSetting::Options(options)) => options.enabled.unwrap_or(true),
             Some(RuleSetting::Severity(_)) | None => true,
         }
     }
@@ -146,7 +182,19 @@ impl LintConfig {
     pub fn severity_for(&self, rule_id: RuleId, default: Severity) -> Severity {
         match self.rules.get(&rule_id) {
             Some(RuleSetting::Severity(severity)) => *severity,
+            Some(RuleSetting::Options(options)) => options.severity.unwrap_or(default),
             _ => default,
+        }
+    }
+
+    /// Returns a rule's rule-specific options table, or an empty one if the rule was configured
+    /// with just a bool/severity shorthand (or not configured at all). Rules read their own
+    /// keys back out via [`RuleOptions`]'s `get_*` accessors and fall back to a hardcoded
+    /// default per key when absent.
+    pub fn rule_options(&self, rule_id: RuleId) -> RuleOptions {
+        match self.rules.get(&rule_id) {
+            Some(RuleSetting::Options(options)) => options.clone(),
+            _ => RuleOptions::default(),
         }
     }
 }
@@ -194,6 +242,40 @@ mod tests {
     }
 
     #[test]
+    fn rule_options_table_supports_severity_and_extra_keys() {
+        let config = LintConfig::from_toml_str(
+            r#"
+            [rules.line_length]
+            severity = "error"
+            limit = 100
+            code_blocks = false
+            "#,
+        )
+        .unwrap();
+        assert!(config.is_rule_enabled(RuleId::LineLength));
+        assert_eq!(
+            config.severity_for(RuleId::LineLength, Severity::Warning),
+            Severity::Error
+        );
+        let options = config.rule_options(RuleId::LineLength);
+        assert_eq!(options.get_usize("limit"), Some(100));
+        assert_eq!(options.get_bool("code_blocks"), Some(false));
+    }
+
+    #[test]
+    fn rule_options_table_can_disable_the_rule() {
+        let config = LintConfig::from_toml_str(
+            r#"
+            [rules.line_length]
+            enabled = false
+            limit = 100
+            "#,
+        )
+        .unwrap();
+        assert!(!config.is_rule_enabled(RuleId::LineLength));
+    }
+
+    #[test]
     fn front_matter_required_keys_are_parsed() {
         let config = LintConfig::from_toml_str(
             r#"
@@ -213,7 +295,7 @@ mod tests {
             not_a_real_rule = true
             "#,
         );
-        assert!(result.is_err());
+        assert!(matches!(result, Err(ConfigError::UnknownRule { .. })));
     }
 
     #[test]

@@ -1,0 +1,122 @@
+//! MD054: link/image style consistency — `autolink` (`<https://url>`), `inline`
+//! (`[text](url)`), `full` reference (`[text][label]`), `collapsed` reference (`[text][]`), or
+//! `shortcut` reference (`[text]`). All styles are allowed by default (a no-op, like
+//! [`crate::rules::missing_front_matter_key`] with no required keys); set any of
+//! `[rules.link_image_style] autolink/inline/full/collapsed/shortcut = false` to disallow it.
+//! Not auto-fixable — converting between styles can need information (a label, a URL) this rule
+//! doesn't have.
+
+use mq_markdown::Node;
+
+use crate::rules::Rule;
+use crate::{Diagnostic, LintConfig, LintMessage, RuleId, Severity};
+
+pub(crate) struct LinkImageStyle;
+
+fn detect_style(raw: &str) -> &'static str {
+    if raw.starts_with('<') {
+        "autolink"
+    } else if raw.ends_with("[]") {
+        "collapsed"
+    } else if raw.ends_with(']') && raw.matches('[').count() >= 2 {
+        "full"
+    } else if raw.ends_with(')') {
+        "inline"
+    } else {
+        "shortcut"
+    }
+}
+
+impl Rule for LinkImageStyle {
+    fn id(&self) -> RuleId {
+        RuleId::LinkImageStyle
+    }
+
+    fn default_severity(&self) -> Severity {
+        Severity::Info
+    }
+
+    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+        let options = config.rule_options(self.id());
+        let disallowed: Vec<&str> = ["autolink", "inline", "full", "collapsed", "shortcut"]
+            .into_iter()
+            .filter(|style| options.get_bool(style) == Some(false))
+            .collect();
+        if disallowed.is_empty() {
+            return Vec::new();
+        }
+
+        let mut diagnostics = Vec::new();
+        crate::walk::walk(doc.nodes.iter(), &mut |node| {
+            let position = match node {
+                Node::Link(l) => l.position.clone(),
+                Node::LinkRef(l) => l.position.clone(),
+                Node::Image(i) => i.position.clone(),
+                Node::ImageRef(i) => i.position.clone(),
+                _ => return,
+            };
+            let Some(position) = position else { return };
+            let Some(raw) = crate::fix::slice(source, position.clone().into()) else {
+                return;
+            };
+            let found = detect_style(raw);
+
+            if disallowed.contains(&found) {
+                let allowed: Vec<&str> = ["autolink", "inline", "full", "collapsed", "shortcut"]
+                    .into_iter()
+                    .filter(|s| !disallowed.contains(s))
+                    .collect();
+                diagnostics.push(
+                    Diagnostic::new(
+                        LintMessage::LinkImageStyle {
+                            expected: allowed.join("/"),
+                            found: found.to_string(),
+                        },
+                        self.default_severity(),
+                    )
+                    .with_range(position),
+                );
+            }
+        });
+        diagnostics
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_op_with_no_config() {
+        let doc: mq_markdown::Markdown = "[text](url)\n".parse().unwrap();
+        assert!(
+            LinkImageStyle
+                .check(&doc, "[text](url)\n", &LintConfig::default())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn flags_a_disallowed_style() {
+        let config = LintConfig::from_toml_str("[rules.link_image_style]\nautolink = false\n").unwrap();
+        let source = "<https://example.com>\n";
+        let doc: mq_markdown::Markdown = source.parse().unwrap();
+        let diagnostics = LinkImageStyle.check(&doc, source, &config);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message,
+            LintMessage::LinkImageStyle {
+                expected: "inline/full/collapsed/shortcut".to_string(),
+                found: "autolink".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn allowed_styles_are_not_flagged() {
+        let config = LintConfig::from_toml_str("[rules.link_image_style]\nautolink = false\n").unwrap();
+        let source = "[text](https://example.com)\n";
+        let doc: mq_markdown::Markdown = source.parse().unwrap();
+        assert!(LinkImageStyle.check(&doc, source, &config).is_empty());
+    }
+}

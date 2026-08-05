@@ -1,0 +1,99 @@
+//! MD013: line length. Configurable via `[rules.line_length] limit` (default 80) and
+//! `code_blocks` (default `true` — whether fenced code block lines are checked too). Not
+//! auto-fixable — safely rewrapping prose without breaking Markdown syntax needs judgment this
+//! rule doesn't have.
+
+use mq_markdown::Node;
+
+use crate::rules::Rule;
+use crate::{Diagnostic, LintConfig, LintMessage, Range, RuleId, Severity};
+
+pub(crate) struct LineLength;
+
+const DEFAULT_LIMIT: usize = 80;
+
+impl Rule for LineLength {
+    fn id(&self) -> RuleId {
+        RuleId::LineLength
+    }
+
+    fn default_severity(&self) -> Severity {
+        Severity::Info
+    }
+
+    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+        let options = config.rule_options(self.id());
+        let limit = options.get_usize("limit").unwrap_or(DEFAULT_LIMIT);
+        let check_code_blocks = options.get_bool("code_blocks").unwrap_or(true);
+
+        let code_ranges: Vec<(usize, usize)> = if check_code_blocks {
+            Vec::new()
+        } else {
+            let mut ranges = Vec::new();
+            crate::walk::walk(doc.nodes.iter(), &mut |node| {
+                if let Node::Code(code) = node
+                    && let Some(position) = &code.position
+                {
+                    ranges.push((position.start.line, position.end.line));
+                }
+            });
+            ranges
+        };
+
+        crate::text::numbered_lines(source)
+            .filter_map(|(line_number, line)| {
+                if code_ranges
+                    .iter()
+                    .any(|(start, end)| *start <= line_number && line_number <= *end)
+                {
+                    return None;
+                }
+                let length = line.chars().count();
+                (length > limit).then(|| {
+                    Diagnostic::new(LintMessage::LineLength { length, limit }, self.default_severity())
+                        .with_range(Range::single_line(line_number, limit + 1, length + 1))
+                })
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_with_limit(markdown: &str, limit: usize) -> Vec<Diagnostic> {
+        let doc: mq_markdown::Markdown = markdown.parse().unwrap();
+        let config = LintConfig::from_toml_str(&format!("[rules.line_length]\nlimit = {limit}\n")).unwrap();
+        LineLength.check(&doc, markdown, &config)
+    }
+
+    #[test]
+    fn no_diagnostics_under_the_limit() {
+        assert!(run_with_limit("short line\n", 80).is_empty());
+    }
+
+    #[test]
+    fn flags_a_line_over_the_limit() {
+        let diagnostics = run_with_limit("this line is over the limit\n", 10);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message,
+            LintMessage::LineLength { length: 27, limit: 10 }
+        );
+    }
+
+    #[test]
+    fn code_blocks_can_be_excluded() {
+        let doc: mq_markdown::Markdown = "```\nthis is a very long line inside a code block\n```\n"
+            .parse()
+            .unwrap();
+        let config = LintConfig::from_toml_str("[rules.line_length]\nlimit = 10\ncode_blocks = false\n").unwrap();
+        let diagnostics = LineLength.check(
+            &doc,
+            "```\nthis is a very long line inside a code block\n```\n",
+            &config,
+        );
+        assert!(diagnostics.is_empty());
+    }
+}

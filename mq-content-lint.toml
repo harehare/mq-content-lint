@@ -2,15 +2,29 @@
 #
 # Drop a file named `mq-content-lint.toml` anywhere in (or above) the directory you run
 # `mq-content-lint` from; it's discovered automatically. Every key below is optional — with no
-# config file at all, every rule runs at its default severity except `missing_front_matter_key`,
-# which has no required keys to check and so never fires (see README for why).
+# config file at all, every rule runs at its default severity except a handful that are opt-in
+# by nature (missing_front_matter_key, required_headings, proper_names, link_image_style — see
+# README for why). Run `mq-content-lint --list-rules` for the full list of rule ids and defaults.
 
 [rules]
-# Each rule accepts either a bool (enable/disable at its default severity) or a severity string
-# ("error", "warning", "info"), which also implies the rule is enabled.
+# A rule accepts a bool (enable/disable at its default severity), a severity string ("error",
+# "warning", "info", which also implies the rule is enabled), or — for rules with extra options —
+# a table with an optional `severity` key plus whatever keys that rule reads.
 heading_hierarchy_skip = "warning"
 image_missing_alt = "error"
 missing_front_matter_key = "error"
+no_inline_html = false
+
+[rules.line_length]
+severity = "warning"
+limit = 100
+code_blocks = false
+
+[rules.heading_style]
+style = "atx"
+
+[rules.ul_style]
+style = "dash"
 
 [front_matter]
 # Keys required in every linted document's YAML (`---`) or TOML (`+++`) front matter block.

@@ -22,7 +22,7 @@ pub(super) fn write_json_report(w: &mut impl Write, results: &[(String, Vec<Diag
 
                     serde_json::json!({
                         "ruleId": diagnostic.rule_id().as_str(),
-                        "selector": diagnostic.rule_id().selector().to_string(),
+                        "selector": diagnostic.rule_id().selector().map(|s| s.to_string()),
                         "severity": diagnostic.severity.to_string(),
                         "message": diagnostic.text(),
                         "help": diagnostic.help(),
@@ -52,8 +52,9 @@ mod tests {
 
     #[test]
     fn test_write_json_report_shape() {
-        let doc: mq_markdown::Markdown = "![](missing-alt.png)\n".parse().unwrap();
-        let diagnostics = Linter::with_default_rules().run(&doc, &LintConfig::default());
+        let source = "![](missing-alt.png)\n";
+        let doc: mq_markdown::Markdown = source.parse().unwrap();
+        let diagnostics = Linter::with_default_rules().run(&doc, source, &LintConfig::default());
         let results = vec![("test.md".to_string(), diagnostics)];
 
         let mut buf = Vec::new();

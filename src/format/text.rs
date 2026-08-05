@@ -78,12 +78,11 @@ fn write_category(
             Some(range) => format!("{}:{}:{}", file_label, range.start_line, range.start_column),
             None => file_label.to_string(),
         };
-        writeln!(
-            w,
-            "{bar}     {} {}",
-            loc.dimmed(),
-            format!("{} ({})", diagnostic.rule_id(), diagnostic.rule_id().selector()).dimmed(),
-        )?;
+        let rule_label = match diagnostic.rule_id().selector() {
+            Some(selector) => format!("{} ({})", diagnostic.rule_id(), selector),
+            None => diagnostic.rule_id().to_string(),
+        };
+        writeln!(w, "{bar}     {} {}", loc.dimmed(), rule_label.dimmed())?;
 
         if let Some(help) = diagnostic.help() {
             writeln!(w, "{bar}       {}", format!("help: {help}").bright_blue())?;
@@ -131,9 +130,14 @@ mod tests {
     use mq_content_lint::{LintConfig, Linter};
 
     fn sample_diagnostics() -> Vec<Diagnostic> {
-        let doc: mq_markdown::Markdown = "![](missing-alt.png)\n".parse().unwrap();
+        let source = "![](missing-alt.png)\n";
+        let doc: mq_markdown::Markdown = source.parse().unwrap();
         let config = LintConfig::default();
-        Linter::with_default_rules().run(&doc, &config)
+        Linter::with_default_rules()
+            .run(&doc, source, &config)
+            .into_iter()
+            .filter(|d| d.rule_id() == mq_content_lint::RuleId::ImageMissingAlt)
+            .collect()
     }
 
     #[test]

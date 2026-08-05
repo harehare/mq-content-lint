@@ -69,8 +69,9 @@ mod tests {
     use mq_content_lint::{LintConfig, Linter};
 
     fn sample_diagnostics() -> Vec<Diagnostic> {
-        let doc: mq_markdown::Markdown = "![](missing-alt.png)\n".parse().unwrap();
-        Linter::with_default_rules().run(&doc, &LintConfig::default())
+        let source = "![](missing-alt.png)\n";
+        let doc: mq_markdown::Markdown = source.parse().unwrap();
+        Linter::with_default_rules().run(&doc, source, &LintConfig::default())
     }
 
     #[test]

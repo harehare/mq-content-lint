@@ -18,7 +18,7 @@ impl Rule for ImageMissingAlt {
         Severity::Error
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
 
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
@@ -50,7 +50,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        ImageMissingAlt.check(&doc, &LintConfig::default())
+        ImageMissingAlt.check(&doc, markdown, &LintConfig::default())
     }
 
     #[test]
