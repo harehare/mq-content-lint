@@ -46,6 +46,10 @@ Exit code is non-zero if any diagnostic at or above `--min-severity` (default `i
 diagnostic at all") was reported — the same convention `mq-lint` uses, so both tools fail CI the
 same way. Pass `--min-severity error` to only fail on errors.
 
+When given more than one file, they're read, (optionally) fixed, and linted in parallel across
+CPU cores; output stays in the same order regardless (sorted by path), so multi-file runs are
+deterministic to diff or snapshot in CI.
+
 ### Autofix
 
 `--fix` applies every diagnostic with a machine-applicable rewrite in a single pass over the

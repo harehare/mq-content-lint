@@ -9,6 +9,7 @@ use clap::Parser;
 use colored::Colorize;
 use format::OutputFormat;
 use mq_content_lint::{Diagnostic, LintConfig, Linter, RuleId, Severity};
+use rayon::prelude::*;
 
 /// Static content linter for Markdown, built on mq's AST and selectors.
 #[derive(Parser)]
@@ -123,43 +124,83 @@ fn run() -> io::Result<bool> {
     paths.sort();
     paths.dedup();
 
-    let mut results: Vec<(String, Vec<Diagnostic>)> = Vec::with_capacity(paths.len());
-    for path in &paths {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| io::Error::other(format!("reading file {}: {}", path.display(), e)))?;
-        let label = path.display().to_string();
+    // Each file's read/fix/lint pipeline is independent (only file I/O and pure computation,
+    // no shared mutable state), so it parallelizes cleanly across files with rayon.
+    // `par_iter().map(..).collect()` preserves `paths`' order in the output regardless of which
+    // thread finishes first, so output stays deterministic; anything that writes to `w` (the
+    // "fixed N issues" notices) is deferred to a sequential pass afterward for the same reason.
+    let outcomes: Vec<FileOutcome> = paths
+        .par_iter()
+        .map(|path| -> io::Result<FileOutcome> { process_file(path, &linter, &config, min_severity, cli.fix) })
+        .collect::<io::Result<Vec<_>>>()?;
 
-        let content = if cli.fix {
-            let (fixed, fix_count) = fix_source(&content, &linter, &config)
-                .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
-            if fixed != content {
-                std::fs::write(path, &fixed)
-                    .map_err(|e| io::Error::other(format!("writing file {}: {}", path.display(), e)))?;
-                let issue_word = if fix_count == 1 { "issue" } else { "issues" };
-                if cli.format == OutputFormat::Text {
-                    writeln!(
-                        w,
-                        "{} {fix_count} {issue_word} in {label}",
-                        "fixed".bright_green().bold()
-                    )?;
-                } else {
-                    eprintln!("fixed {fix_count} {issue_word} in {label}");
-                }
+    for outcome in &outcomes {
+        if let Some(fix_count) = outcome.fix_count {
+            let issue_word = if fix_count == 1 { "issue" } else { "issues" };
+            if cli.format == OutputFormat::Text {
+                writeln!(
+                    w,
+                    "{} {fix_count} {issue_word} in {}",
+                    "fixed".bright_green().bold(),
+                    outcome.label
+                )?;
+            } else {
+                eprintln!("fixed {fix_count} {issue_word} in {}", outcome.label);
             }
-            fixed
-        } else {
-            content
-        };
-
-        let diagnostics = lint_content(&content, &linter, &config, min_severity)
-            .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
-        results.push((label, diagnostics));
+        }
     }
 
-    let had_diagnostics = results.iter().any(|(_, diagnostics)| !diagnostics.is_empty());
+    let had_diagnostics = outcomes.iter().any(|o| !o.diagnostics.is_empty());
+    let results: Vec<(String, Vec<Diagnostic>)> = outcomes.into_iter().map(|o| (o.label, o.diagnostics)).collect();
     format::write_report(&mut w, cli.format, &results)?;
 
     Ok(had_diagnostics)
+}
+
+/// One file's outcome from [`process_file`]: its diagnostics, and — when `--fix` changed it —
+/// how many fixes were applied, for the sequential "fixed N issues in ..." notice.
+struct FileOutcome {
+    label: String,
+    diagnostics: Vec<Diagnostic>,
+    fix_count: Option<usize>,
+}
+
+/// Reads, optionally fixes (writing the result back to disk if changed), and lints a single
+/// file. Pure I/O plus computation with no access to shared state, so callers can run this
+/// across a rayon `par_iter()` safely.
+fn process_file(
+    path: &Path,
+    linter: &Linter,
+    config: &LintConfig,
+    min_severity: Severity,
+    fix: bool,
+) -> io::Result<FileOutcome> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| io::Error::other(format!("reading file {}: {}", path.display(), e)))?;
+    let label = path.display().to_string();
+
+    let (content, fix_count) = if fix {
+        let (fixed, fix_count) = fix_source(&content, linter, config)
+            .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
+        if fixed != content {
+            std::fs::write(path, &fixed)
+                .map_err(|e| io::Error::other(format!("writing file {}: {}", path.display(), e)))?;
+            (fixed, Some(fix_count))
+        } else {
+            (fixed, None)
+        }
+    } else {
+        (content, None)
+    };
+
+    let diagnostics = lint_content(&content, linter, config, min_severity)
+        .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
+
+    Ok(FileOutcome {
+        label,
+        diagnostics,
+        fix_count,
+    })
 }
 
 /// Parses `content` as Markdown and returns diagnostics at or above `min_severity`.
