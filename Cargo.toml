@@ -1,0 +1,45 @@
+[package]
+name = "mq-content-lint"
+version = "0.1.0"
+edition = "2024"
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+categories = ["command-line-utilities", "text-processing"]
+description = "Static content linter for Markdown, built on mq's AST and selectors"
+homepage = "https://github.com/harehare/mq-content-lint"
+keywords = ["markdown", "lint", "static-analysis", "documentation"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/harehare/mq-content-lint"
+
+[lib]
+name = "mq_content_lint"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mq-content-lint"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[dependencies]
+clap = { version = "4.6.5", features = ["derive"], optional = true }
+colored = { version = "3.1.1", optional = true }
+miette = { version = "7.6.0", optional = true }
+mq-lang = "0.8.1"
+mq-markdown = { version = "0.8.1", features = ["json"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+serde_yaml = "0.9.34"
+thiserror = "2.0.19"
+toml = "1.1.4"
+
+[features]
+default = []
+cli = ["dep:clap", "dep:colored", "dep:miette"]
+
+[dev-dependencies]
+rstest = "0.26.1"
+
+[package.metadata.binstall]
+pkg-fmt = "bin"
+pkg-url = "{ repo }/releases/download/v{ version }/{ bin }-{ target }{ binary-ext }"
+disabled-strategies = ["quick-install"]
