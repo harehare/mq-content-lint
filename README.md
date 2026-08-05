@@ -211,13 +211,30 @@ machine-applicable rewrite (see [Autofix](#autofix)).
 |---|---|:-:|---|
 | `missing_front_matter_key` | error | | Required YAML/TOML front matter key missing (not a markdownlint rule). |
 
+## Custom rules
+
+Beyond the built-in rules, `mq-content-lint` lets a config file define its own rules as
+[mq](https://github.com/harehare/mq) queries — this is the feature that sets it apart from
+markdownlint/rumdl, which only ship fixed rule sets. A custom rule's query runs against the
+document with `mq-lang`; every node it selects becomes a diagnostic at that node's position.
+
+```toml
+[[custom_rules]]
+id = "no_todo"
+query = 'select(contains(to_text(), "TODO"))'
+message = "found a TODO marker"
+severity = "warning"  # optional, defaults to "warning"
+```
+
+Custom rules run alongside the built-ins and are merged into the same report, sorted by position.
+They don't currently support `--fix` — a custom rule only reports, it doesn't rewrite. Their
+`ruleId` is whatever `id` you configure (not one of the built-in ids below), their `selector`
+field in JSON output is always `null`, and an invalid query is a hard error at lint time (not a
+silently-empty result), so a typo in a query fails loudly rather than passing CI by accident.
+
 ## Non-goals
 
 - **Natural-language spelling/style checking** (a Vale-style prose linter) is out of scope.
-- **Arbitrary mq expressions as rules** — letting a config file supply its own `.mq` query as a
-  custom rule — is a later stage of this project. The rules above are fixed, built-in Rust logic
-  over the `mq-markdown` AST, not user-supplied queries, which is what makes their output
-  deterministic and their positions stable enough to depend on in CI today.
 
 ## License
 

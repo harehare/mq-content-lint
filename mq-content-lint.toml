@@ -30,3 +30,11 @@ style = "dash"
 # Keys required in every linted document's YAML (`---`) or TOML (`+++`) front matter block.
 # Leave empty (the default) to skip front matter checking entirely.
 required_keys = ["title"]
+
+# Custom rules: your own mq queries as lint rules, run alongside the built-ins above. Every node
+# a rule's query selects becomes a diagnostic at that node's position. See README for details.
+[[custom_rules]]
+id = "no_todo"
+query = 'select(contains(to_text(), "TODO"))'
+message = "found a TODO marker"
+severity = "warning" # optional, defaults to "warning"

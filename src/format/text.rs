@@ -1,16 +1,18 @@
 use std::io::{self, Write};
 
 use colored::Colorize;
-use mq_content_lint::{Diagnostic, Severity};
+use mq_content_lint::Severity;
+
+use crate::report_item::ReportItem;
 
 /// Severities in the order categories are displayed, most severe first.
 const SEVERITY_ORDER: [Severity; 3] = [Severity::Error, Severity::Warning, Severity::Info];
 
-/// Writes `diagnostics` grouped by severity and returns `true` if any were reported.
-pub(super) fn write_text_report(w: &mut impl Write, file_label: &str, diagnostics: &[Diagnostic]) -> io::Result<bool> {
+/// Writes `items` grouped by severity and returns `true` if any were reported.
+pub(super) fn write_text_report(w: &mut impl Write, file_label: &str, items: &[ReportItem]) -> io::Result<bool> {
     let mut printed_category = false;
     for severity in SEVERITY_ORDER {
-        let group: Vec<&Diagnostic> = diagnostics.iter().filter(|d| d.severity == severity).collect();
+        let group: Vec<&ReportItem> = items.iter().filter(|d| d.severity() == severity).collect();
         if group.is_empty() {
             continue;
         }
@@ -21,7 +23,7 @@ pub(super) fn write_text_report(w: &mut impl Write, file_label: &str, diagnostic
         write_category(w, severity, &group, file_label)?;
     }
 
-    if diagnostics.is_empty() {
+    if items.is_empty() {
         writeln!(
             w,
             "{}  {}",
@@ -30,10 +32,10 @@ pub(super) fn write_text_report(w: &mut impl Write, file_label: &str, diagnostic
         )?;
     } else {
         writeln!(w)?;
-        write_summary(w, diagnostics)?;
+        write_summary(w, items)?;
     }
 
-    Ok(!diagnostics.is_empty())
+    Ok(!items.is_empty())
 }
 
 /// Maps a severity to its category title and one-letter marker.
@@ -54,41 +56,37 @@ fn severity_bar(severity: Severity) -> colored::ColoredString {
 }
 
 /// Writes one severity category: a heading followed by its diagnostics, each as a
-/// `[X] message` line with the `file:line:col .rule_id` location on the line below (the rule
-/// id rendered as the mq selector it corresponds to, e.g. `.image` for `image_missing_alt`).
-fn write_category(
-    w: &mut impl Write,
-    severity: Severity,
-    diagnostics: &[&Diagnostic],
-    file_label: &str,
-) -> io::Result<()> {
+/// `[X] message` line with the `file:line:col .rule_id` location on the line below (a built-in
+/// rule's id is rendered with the mq selector it corresponds to, e.g. `.image` for
+/// `image_missing_alt`; a custom rule just shows its configured id).
+fn write_category(w: &mut impl Write, severity: Severity, items: &[&ReportItem], file_label: &str) -> io::Result<()> {
     let (title, letter) = severity_category(severity);
     let bar = severity_bar(severity);
 
     writeln!(w, "{}\n", title)?;
 
-    for (i, diagnostic) in diagnostics.iter().enumerate() {
-        match diagnostic.severity {
-            Severity::Error => writeln!(w, "{bar} {} {}", letter, diagnostic.text().bright_red().bold())?,
-            Severity::Warning => writeln!(w, "{bar} {} {}", letter, diagnostic.text().bright_yellow().bold())?,
-            Severity::Info => writeln!(w, "{bar} {} {}", letter, diagnostic.text().blue().bold())?,
+    for (i, item) in items.iter().enumerate() {
+        match item.severity() {
+            Severity::Error => writeln!(w, "{bar} {} {}", letter, item.text().bright_red().bold())?,
+            Severity::Warning => writeln!(w, "{bar} {} {}", letter, item.text().bright_yellow().bold())?,
+            Severity::Info => writeln!(w, "{bar} {} {}", letter, item.text().blue().bold())?,
         }
 
-        let loc = match &diagnostic.range {
+        let loc = match item.range() {
             Some(range) => format!("{}:{}:{}", file_label, range.start_line, range.start_column),
             None => file_label.to_string(),
         };
-        let rule_label = match diagnostic.rule_id().selector() {
-            Some(selector) => format!("{} ({})", diagnostic.rule_id(), selector),
-            None => diagnostic.rule_id().to_string(),
+        let rule_label = match item.selector() {
+            Some(selector) => format!("{} ({})", item.rule_id(), selector),
+            None => item.rule_id().to_string(),
         };
         writeln!(w, "{bar}     {} {}", loc.dimmed(), rule_label.dimmed())?;
 
-        if let Some(help) = diagnostic.help() {
+        if let Some(help) = item.help() {
             writeln!(w, "{bar}       {}", format!("help: {help}").bright_blue())?;
         }
 
-        if i + 1 < diagnostics.len() {
+        if i + 1 < items.len() {
             writeln!(w, "{bar}")?;
         }
     }
@@ -97,11 +95,11 @@ fn write_category(
 }
 
 /// Writes the trailing summary line, e.g. `found 3 issues (2 errors, 1 warning).`
-fn write_summary(w: &mut impl Write, diagnostics: &[Diagnostic]) -> io::Result<()> {
+fn write_summary(w: &mut impl Write, items: &[ReportItem]) -> io::Result<()> {
     let breakdown: Vec<String> = SEVERITY_ORDER
         .into_iter()
         .filter_map(|severity| {
-            let count = diagnostics.iter().filter(|d| d.severity == severity).count();
+            let count = items.iter().filter(|d| d.severity() == severity).count();
             if count == 0 {
                 return None;
             }
@@ -118,8 +116,8 @@ fn write_summary(w: &mut impl Write, diagnostics: &[Diagnostic]) -> io::Result<(
         w,
         "{} {} issue{} ({}).",
         "found".bold(),
-        diagnostics.len().to_string().bold(),
-        if diagnostics.len() == 1 { "" } else { "s" },
+        items.len().to_string().bold(),
+        if items.len() == 1 { "" } else { "s" },
         breakdown.join(", "),
     )
 }
@@ -129,7 +127,7 @@ mod tests {
     use super::*;
     use mq_content_lint::{LintConfig, Linter};
 
-    fn sample_diagnostics() -> Vec<Diagnostic> {
+    fn sample_items() -> Vec<ReportItem> {
         let source = "![](missing-alt.png)\n";
         let doc: mq_markdown::Markdown = source.parse().unwrap();
         let config = LintConfig::default();
@@ -137,6 +135,7 @@ mod tests {
             .run(&doc, source, &config)
             .into_iter()
             .filter(|d| d.rule_id() == mq_content_lint::RuleId::ImageMissingAlt)
+            .map(ReportItem::from)
             .collect()
     }
 
@@ -154,14 +153,29 @@ mod tests {
 
     #[test]
     fn test_write_text_report_with_diagnostics() {
-        let diagnostics = sample_diagnostics();
+        let items = sample_items();
         let mut buf = Vec::new();
-        let had_diagnostics = write_text_report(&mut buf, "test.md", &diagnostics).unwrap();
+        let had_diagnostics = write_text_report(&mut buf, "test.md", &items).unwrap();
         assert!(had_diagnostics);
 
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("## Errors"));
         assert!(output.contains("test.md:1:1"));
         assert!(output.contains("found 1 issue (1 error)."));
+    }
+
+    #[test]
+    fn test_write_text_report_with_custom_rule() {
+        let item = ReportItem::Custom(mq_content_lint::custom_rules::CustomDiagnostic {
+            rule_id: "no_todo".to_string(),
+            message: "found a TODO".to_string(),
+            severity: Severity::Warning,
+            range: None,
+        });
+        let mut buf = Vec::new();
+        write_text_report(&mut buf, "test.md", &[item]).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("found a TODO"));
+        assert!(output.contains("no_todo"));
     }
 }

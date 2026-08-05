@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::custom_rules::CustomRule;
 use crate::{RuleId, Severity};
 
 /// The config file name `mq-content-lint` looks for, both when given explicitly via `--config`
@@ -79,6 +80,9 @@ struct FileConfig {
     #[serde(default)]
     rules: HashMap<String, RuleSetting>,
     front_matter: FrontMatterTable,
+    /// `[[custom_rules]]` entries — see [`crate::custom_rules`].
+    #[serde(default)]
+    custom_rules: Vec<CustomRule>,
 }
 
 /// Error loading or parsing a config file.
@@ -109,6 +113,9 @@ pub enum ConfigError {
 pub struct LintConfig {
     rules: HashMap<RuleId, RuleSetting>,
     pub required_front_matter_keys: Vec<String>,
+    /// `[[custom_rules]]` entries, run in addition to the built-in rules. Empty by default — see
+    /// [`crate::custom_rules`].
+    pub custom_rules: Vec<CustomRule>,
 }
 
 impl LintConfig {
@@ -135,6 +142,7 @@ impl LintConfig {
         Ok(Self {
             rules,
             required_front_matter_keys: file.front_matter.required_keys,
+            custom_rules: file.custom_rules,
         })
     }
 

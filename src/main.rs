@@ -1,4 +1,5 @@
 mod format;
+mod report_item;
 
 use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
@@ -8,8 +9,9 @@ use std::str::FromStr;
 use clap::Parser;
 use colored::Colorize;
 use format::OutputFormat;
-use mq_content_lint::{Diagnostic, LintConfig, Linter, RuleId, Severity};
+use mq_content_lint::{LintConfig, Linter, RuleId, Severity};
 use rayon::prelude::*;
+use report_item::ReportItem;
 
 /// Static content linter for Markdown, built on mq's AST and selectors.
 #[derive(Parser)]
@@ -151,7 +153,7 @@ fn run() -> io::Result<bool> {
     }
 
     let had_diagnostics = outcomes.iter().any(|o| !o.diagnostics.is_empty());
-    let results: Vec<(String, Vec<Diagnostic>)> = outcomes.into_iter().map(|o| (o.label, o.diagnostics)).collect();
+    let results: Vec<(String, Vec<ReportItem>)> = outcomes.into_iter().map(|o| (o.label, o.diagnostics)).collect();
     format::write_report(&mut w, cli.format, &results)?;
 
     Ok(had_diagnostics)
@@ -161,7 +163,7 @@ fn run() -> io::Result<bool> {
 /// how many fixes were applied, for the sequential "fixed N issues in ..." notice.
 struct FileOutcome {
     label: String,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<ReportItem>,
     fix_count: Option<usize>,
 }
 
@@ -203,21 +205,37 @@ fn process_file(
     })
 }
 
-/// Parses `content` as Markdown and returns diagnostics at or above `min_severity`.
+/// Parses `content` as Markdown and returns built-in plus custom-rule diagnostics at or above
+/// `min_severity`, merged and sorted by position (built-in and custom rules share no ordering
+/// otherwise, since they run as two separate passes).
 fn lint_content(
     content: &str,
     linter: &Linter,
     config: &LintConfig,
     min_severity: Severity,
-) -> io::Result<Vec<Diagnostic>> {
+) -> io::Result<Vec<ReportItem>> {
     let doc: mq_markdown::Markdown = content
         .parse()
         .map_err(|e: miette::Error| io::Error::other(e.to_string()))?;
-    Ok(linter
+
+    let mut items: Vec<ReportItem> = linter
         .run(&doc, content, config)
         .into_iter()
         .filter(|d| d.severity >= min_severity)
-        .collect())
+        .map(ReportItem::from)
+        .collect();
+
+    let custom_diagnostics =
+        mq_content_lint::custom_rules::run(&config.custom_rules, &doc).map_err(io::Error::other)?;
+    items.extend(
+        custom_diagnostics
+            .into_iter()
+            .filter(|d| d.severity >= min_severity)
+            .map(ReportItem::from),
+    );
+
+    items.sort_by_key(|item| item.range().map(|r| (r.start_line, r.start_column)));
+    Ok(items)
 }
 
 /// Applies every diagnostic with a fix to `content` in a single pass, returning the rewritten

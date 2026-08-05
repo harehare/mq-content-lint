@@ -6,7 +6,7 @@ mod text;
 
 use std::io::{self, Write};
 
-use mq_content_lint::Diagnostic;
+use crate::report_item::ReportItem;
 
 /// Diagnostic output format.
 #[derive(Clone, Copy, Debug, Default, PartialEq, clap::ValueEnum)]
@@ -24,12 +24,12 @@ pub(crate) enum OutputFormat {
 pub(crate) fn write_report(
     w: &mut impl Write,
     format: OutputFormat,
-    results: &[(String, Vec<Diagnostic>)],
+    results: &[(String, Vec<ReportItem>)],
 ) -> io::Result<()> {
     match format {
         OutputFormat::Text => {
-            for (file_label, diagnostics) in results {
-                text::write_text_report(w, file_label, diagnostics)?;
+            for (file_label, items) in results {
+                text::write_text_report(w, file_label, items)?;
             }
             Ok(())
         }
