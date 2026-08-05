@@ -116,7 +116,9 @@ version, as are diagnostic positions and JSON/SARIF field names — safe to depe
 Rule ids are this crate's own `snake_case` names (config keys and `--disable`/`--list-rules`
 values), cross-referenced against their [markdownlint](https://github.com/DavidAnson/markdownlint)
 equivalent for readers coming from that tool. "Fix?" marks whether the rule ever populates a
-machine-applicable rewrite (see [Autofix](#autofix)).
+machine-applicable rewrite (see [Autofix](#autofix)). Want a check that isn't here? A
+project-specific one is usually a better fit as a [custom rule](#custom-rules) than a PR; see
+[CONTRIBUTING.md](./CONTRIBUTING.md) for adding a new built-in rule.
 
 ### Headings
 
