@@ -69,14 +69,15 @@ deterministic to diff or snapshot in CI.
 
 ### Autofix
 
-`--fix` applies every diagnostic with a machine-applicable rewrite in a single pass over the
-original source — diagnostics are **not** recomputed between individual fixes, so a fix that
-exposes a new issue (or a rule whose fix would have overlapped another rule's fix on the same
-span) needs a second `--fix` run to pick up. Rules where there's no single unambiguous rewrite —
-no reasonable default alt text, no way to invent required front matter content, an ordered-list
-prefix bug that could mean either "insert here" or "renumber" — never populate a fix; see the
-"Fix?" column below. A [custom rule](#custom-rules) is fixable too, if it's configured with a
-`fix` expression.
+`--fix` applies every diagnostic with a machine-applicable rewrite, then re-lints and re-fixes
+automatically if that exposed a new issue — e.g. fixing two tight, back-to-back headings' missing
+`#` spacing can leave them separated by two blank lines instead of one, which a second pass then
+collapses — repeating up to 10 times (the same convention ESLint's own `--fix` uses) until a pass
+makes no further change. Rules where there's no single unambiguous rewrite — no reasonable default
+alt text, no way to invent required front matter content, an ordered-list prefix bug that could
+mean either "insert here" or "renumber" — never populate a fix; see the "Fix?" column below (or
+`--explain <rule-id>`'s `fixable:` line) for which. A [custom rule](#custom-rules) is fixable too,
+if it's configured with a `fix` expression.
 
 Not sure what `--fix` would do before it does it? `--diff` computes the exact same fixes but never
 writes — files (and stdin's fixed content) stay untouched, and a unified diff is printed to stdout

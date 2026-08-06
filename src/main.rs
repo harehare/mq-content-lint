@@ -43,10 +43,11 @@ struct Cli {
     #[arg(long, value_name = "RULE_ID")]
     explain: Option<RuleId>,
 
-    /// Rewrite files in place, applying every diagnostic with a machine-applicable fix in a
-    /// single pass (reads stdin if no files are given, writing the fixed content to stdout).
-    /// Diagnostics are not recomputed between fixes; run again to pick up anything a fix
-    /// exposed.
+    /// Rewrite files in place, applying every diagnostic with a machine-applicable fix (reads
+    /// stdin if no files are given, writing the fixed content to stdout). Re-lints and re-fixes
+    /// automatically when a fix exposes a new diagnostic, up to a bounded number of passes (the
+    /// same convention ESLint's own `--fix` uses), so one run converges without a second
+    /// invocation in the common case.
     #[arg(long)]
     fix: bool,
 
@@ -311,9 +312,36 @@ fn lint_content(
         .collect())
 }
 
-/// Applies every diagnostic with a fix (built-in or custom-rule) to `content` in a single pass,
-/// returning the rewritten text and how many fixes were applied.
+/// Passes `fix_source_once` re-lints and re-fixes for before giving up — fixing one diagnostic
+/// occasionally exposes another (e.g. fixing a heading's style can change whether it's now "the
+/// first line", which `first_line_heading` cares about), so a single pass doesn't always reach a
+/// fully-fixed result. Matches ESLint's own `--fix`, which iterates up to the same count.
+const MAX_FIX_PASSES: usize = 10;
+
+/// Applies every diagnostic with a fix (built-in or custom-rule) to `content`, repeating up to
+/// [`MAX_FIX_PASSES`] times until a pass makes no further change, so fixing one diagnostic that
+/// exposes another converges in a single call instead of requiring the caller to re-invoke.
+/// Returns the final text and the total number of fixes applied across every pass that actually
+/// changed something (a pass whose fixes were all dropped as no-op/overlapping — see
+/// [`mq_content_lint::fix::apply_fixes`] — doesn't count, since nothing was fixed).
 fn fix_source(content: &str, linter: &Linter, config: &LintConfig) -> io::Result<(String, usize)> {
+    let mut current = content.to_string();
+    let mut total_fixed = 0;
+    for _ in 0..MAX_FIX_PASSES {
+        let (fixed, count) = fix_source_once(&current, linter, config)?;
+        if count == 0 || fixed == current {
+            break;
+        }
+        total_fixed += count;
+        current = fixed;
+    }
+    Ok((current, total_fixed))
+}
+
+/// One lint-and-fix pass: applies every diagnostic with a fix to `content`, returning the
+/// rewritten text and how many fixes were applied. Diagnostics are not recomputed within this
+/// single pass — see [`fix_source`], which loops this to convergence.
+fn fix_source_once(content: &str, linter: &Linter, config: &LintConfig) -> io::Result<(String, usize)> {
     let doc: mq_markdown::Markdown = content
         .parse()
         .map_err(|e: miette::Error| io::Error::other(e.to_string()))?;
@@ -589,6 +617,23 @@ mod tests {
         let (fixed, count) = fix_source("#Title\n", &linter, &config).unwrap();
         assert_eq!(fixed, "# Title\n");
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_fix_source_converges_across_multiple_passes() {
+        // Pass 1 fixes no_missing_space_atx on both headings. Pass 2's blanks_around_headings
+        // fixes then each insert their own blank line between the tight H1/H2 pair, producing a
+        // *new* diagnostic (no_multiple_blanks) that a single-pass fix would leave behind. Pass 3
+        // collapses that back down to one blank line, and pass 4 finds nothing left to fix.
+        let linter = Linter::with_default_rules();
+        let config = LintConfig::default();
+        let (fixed, count) = fix_source("#H1\n##H2\nbody\n", &linter, &config).unwrap();
+        assert_eq!(fixed, "# H1\n\n## H2\n\nbody\n");
+        assert_eq!(count, 6, "2 (pass 1) + 3 (pass 2) + 1 (pass 3)");
+
+        // A single lint-and-fix pass alone is not enough to reach that result.
+        let (single_pass, _) = fix_source_once("#H1\n##H2\nbody\n", &linter, &config).unwrap();
+        assert_ne!(single_pass, fixed);
     }
 
     #[test]
