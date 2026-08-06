@@ -27,6 +27,11 @@
         "command": "mqContentLint.fixDocument",
         "title": "mq-content-lint: Fix Document",
         "category": "mq-content-lint"
+      },
+      {
+        "command": "mqContentLint.restartServer",
+        "title": "mq-content-lint: Restart Server",
+        "category": "mq-content-lint"
       }
     ],
     "configuration": {
@@ -35,26 +40,12 @@
         "mqContentLint.enable": {
           "type": "boolean",
           "default": true,
-          "description": "Enable mq-content-lint diagnostics for Markdown files."
+          "description": "Enable the mq-content-lint language server for Markdown files."
         },
-        "mqContentLint.executablePath": {
+        "mqContentLint.serverPath": {
           "type": "string",
-          "default": "mq-content-lint",
-          "description": "Path to the mq-content-lint executable. Defaults to resolving it from PATH."
-        },
-        "mqContentLint.configPath": {
-          "type": "string",
-          "default": "",
-          "description": "Path to an explicit mq-content-lint.toml config file. Left empty, mq-content-lint auto-discovers one."
-        },
-        "mqContentLint.run": {
-          "type": "string",
-          "enum": [
-            "onSave",
-            "onType"
-          ],
-          "default": "onSave",
-          "description": "Whether to re-lint on every keystroke or only when the document is saved."
+          "default": "mq-content-lint-lsp",
+          "description": "Path to the mq-content-lint-lsp executable. Defaults to resolving it from PATH."
         }
       }
     }
@@ -63,6 +54,9 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use mq_content_lint::Severity;
 
-use crate::report_item::ReportItem;
+use mq_content_lint::report_item::ReportItem;
 
 /// Writes a single SARIF 2.1.0 log document covering every linted file.
 ///

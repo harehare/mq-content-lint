@@ -27,6 +27,7 @@ pub mod config;
 pub mod custom_rules;
 pub mod fix;
 pub mod message;
+pub mod report_item;
 pub mod rules;
 mod text;
 mod walk;
