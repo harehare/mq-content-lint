@@ -25,6 +25,7 @@
 
 pub mod config;
 pub mod custom_rules;
+mod disable_comments;
 pub mod fix;
 pub mod message;
 pub mod report_item;

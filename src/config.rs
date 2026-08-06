@@ -92,6 +92,11 @@ struct FileConfig {
     /// `[[custom_rules]]` entries — see [`crate::custom_rules`].
     #[serde(default)]
     custom_rules: Vec<CustomRule>,
+    /// Gitignore-syntax glob patterns for files/directories the CLI's directory walk should
+    /// skip, in addition to any `.gitignore`/`.mq-content-lintignore` file it finds. See
+    /// [`LintConfig::ignore`].
+    #[serde(default)]
+    ignore: Vec<String>,
 }
 
 /// Error loading or parsing a config file.
@@ -127,6 +132,12 @@ pub struct LintConfig {
     /// `[[custom_rules]]` entries, run in addition to the built-in rules. Empty by default — see
     /// [`crate::custom_rules`].
     pub custom_rules: Vec<CustomRule>,
+    /// Gitignore-syntax glob patterns (e.g. `vendor/**`, `CHANGELOG.md`, `!vendor/keep.md`) for
+    /// files/directories the CLI's directory walk skips, on top of whatever `.gitignore` and
+    /// `.mq-content-lintignore` files it discovers on its own. Only consulted when a directory is
+    /// walked — a file named explicitly on the command line is always linted regardless. Empty by
+    /// default (no additional exclusions beyond `.gitignore`/`.mq-content-lintignore`).
+    pub ignore: Vec<String>,
 }
 
 impl LintConfig {
@@ -169,6 +180,7 @@ impl LintConfig {
             rules,
             required_front_matter_keys: file.front_matter.required_keys,
             custom_rules: file.custom_rules,
+            ignore: file.ignore,
         })
     }
 
@@ -190,9 +202,10 @@ impl LintConfig {
     ///   closer file with an empty/absent `required_keys` doesn't clear an inherited one — there
     ///   is no way to distinguish "not set" from "explicitly emptied" once parsed, so this
     ///   crate picks the more useful reading).
-    /// - `custom_rules` accumulate across every level rather than overriding — they're typically
-    ///   additive checks (a root-level house rule plus a package-specific one), not competing
-    ///   settings for the same thing.
+    /// - `custom_rules` and `ignore` accumulate across every level rather than overriding —
+    ///   they're typically additive (a root-level house rule plus a package-specific one, a
+    ///   root-level vendor exclusion plus a package-specific one), not competing settings for the
+    ///   same thing.
     ///
     /// Returns the default config (equivalent to no config file) if none is found anywhere in
     /// the ancestor chain.
@@ -225,6 +238,7 @@ impl LintConfig {
             self.required_front_matter_keys = closer.required_front_matter_keys;
         }
         self.custom_rules.extend(closer.custom_rules);
+        self.ignore.extend(closer.ignore);
         self
     }
 
@@ -472,6 +486,26 @@ mod tests {
         let config = LintConfig::discover(&nested).unwrap();
         let ids: Vec<&str> = config.custom_rules.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, vec!["root_rule", "pkg_rule"]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn ignore_patterns_are_parsed() {
+        let config = LintConfig::from_toml_str("ignore = [\"vendor/**\", \"CHANGELOG.md\"]\n").unwrap();
+        assert_eq!(config.ignore, vec!["vendor/**", "CHANGELOG.md"]);
+    }
+
+    #[test]
+    fn discover_accumulates_ignore_patterns_from_every_level() {
+        let dir = tempdir();
+        std::fs::write(dir.join(CONFIG_FILE_NAME), "ignore = [\"vendor/**\"]\n").unwrap();
+        let nested = dir.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join(CONFIG_FILE_NAME), "ignore = [\"generated/**\"]\n").unwrap();
+
+        let config = LintConfig::discover(&nested).unwrap();
+        assert_eq!(config.ignore, vec!["vendor/**", "generated/**"]);
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

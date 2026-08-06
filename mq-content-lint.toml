@@ -8,7 +8,11 @@
 #
 # Config files cascade: every mq-content-lint.toml between the linted file and the filesystem
 # root is loaded, farthest-first, so a closer file's settings override the same key from a
-# farther one (custom_rules accumulate instead). See README's Configuration section.
+# farther one (custom_rules and ignore accumulate instead). See README's Configuration section.
+
+# Gitignore-syntax patterns for paths the directory walk should skip, on top of whatever
+# .gitignore/.mq-content-lintignore it already finds. See README's "Ignoring files" section.
+ignore = ["vendor/**"]
 
 [rules]
 # A rule accepts a bool (enable/disable at its default severity), a severity string ("error",
