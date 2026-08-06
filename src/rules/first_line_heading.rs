@@ -17,6 +17,10 @@ impl Rule for FirstLineHeading {
         Severity::Info
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         let first_content = doc.nodes.iter().find(|n| !matches!(n, Node::Yaml(_) | Node::Toml(_)));
 

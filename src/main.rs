@@ -405,9 +405,10 @@ fn list_rules(w: &mut impl Write) -> io::Result<()> {
             .unwrap_or_else(|| "-".to_string());
         writeln!(
             w,
-            "{:<34} {:<8} {}",
+            "{:<34} {:<8} {:<4} {}",
             rule.id().as_str().bright_cyan(),
             rule.default_severity().to_string(),
+            if rule.fixable() { "fix" } else { "-" },
             selector.dimmed(),
         )?;
     }
@@ -427,6 +428,7 @@ fn explain_rule(w: &mut impl Write, rule_id: RuleId) -> io::Result<()> {
     writeln!(w, "{}", rule_id.as_str().bright_cyan().bold())?;
     writeln!(w, "{}", rule_id.description())?;
     writeln!(w, "default severity: {}", rule.default_severity())?;
+    writeln!(w, "fixable:          {}", if rule.fixable() { "yes" } else { "no" })?;
     if let Some(selector) = rule_id.selector() {
         writeln!(w, "mq selector:      {selector}")?;
     }
@@ -481,8 +483,17 @@ mod tests {
         let text = strip_ansi(&out);
         assert!(text.contains("MD013: line length."));
         assert!(text.contains("default severity: info"));
+        assert!(text.contains("fixable:          no"));
         assert!(text.contains("limit"));
         assert!(text.contains("line_length = false"));
+    }
+
+    #[test]
+    fn test_explain_rule_reports_fixable_yes_for_a_fixable_rule() {
+        let mut out = Vec::new();
+        explain_rule(&mut out, RuleId::HeadingStyle).unwrap();
+        let text = strip_ansi(&out);
+        assert!(text.contains("fixable:          yes"));
     }
 
     #[test]

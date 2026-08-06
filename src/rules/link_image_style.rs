@@ -36,6 +36,10 @@ impl Rule for LinkImageStyle {
         Severity::Info
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         let options = config.rule_options(self.id());
         let disallowed: Vec<&str> = ["autolink", "inline", "full", "collapsed", "shortcut"]

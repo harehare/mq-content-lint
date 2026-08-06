@@ -27,6 +27,10 @@ impl Rule for CodeFenceStyle {
         Severity::Warning
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         let mut expected = config
             .rule_options(self.id())

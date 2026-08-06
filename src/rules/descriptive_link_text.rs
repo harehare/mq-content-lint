@@ -21,6 +21,10 @@ impl Rule for DescriptiveLinkText {
         Severity::Info
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         let options = config.rule_options(self.id());
         let forbidden = options.get_str_array("forbidden");

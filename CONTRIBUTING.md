@@ -68,7 +68,10 @@ follow the errors if you lose track of a step.
    - **Fix or no fix.** Populate `.with_fix(Fix::new(range, replacement))` when there's exactly one
      correct mechanical rewrite. Leave it off when the rule can only report (no sensible default
      alt text, no way to invent front matter content, an opening/closing pair on different lines —
-     `Fix` is a single-range replacement, so a two-line change isn't expressible as one).
+     `Fix` is a single-range replacement, so a two-line change isn't expressible as one). If the
+     rule *never* populates a fix, override `fn fixable(&self) -> bool { false }` too (defaults to
+     `true`) — it's what `--list-rules`/`--explain` show, and what the README's rule tables should
+     agree with.
    - **Config.** Read rule-specific options via `config.rule_options(self.id())`'s `get_bool`/
      `get_usize`/`get_str`/`get_str_array`, falling back to a hardcoded default — see
      `no_hard_tabs.rs`'s `spaces` option for the minimal pattern. Don't consult severity from

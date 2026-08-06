@@ -57,6 +57,10 @@ impl Rule for LinkFragments {
         Severity::Warning
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         let slugs = collect_slugs(doc);
         let mut diagnostics = Vec::new();

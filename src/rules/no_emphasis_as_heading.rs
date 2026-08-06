@@ -18,6 +18,10 @@ impl Rule for NoEmphasisAsHeading {
         Severity::Info
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         let lines: Vec<&str> = source.lines().collect();
         let mut diagnostics = Vec::new();

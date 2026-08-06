@@ -21,6 +21,10 @@ impl Rule for LineLength {
         Severity::Info
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         let options = config.rule_options(self.id());
         let limit = options.get_usize("limit").unwrap_or(DEFAULT_LIMIT);

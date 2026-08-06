@@ -18,6 +18,10 @@ impl Rule for FencedCodeLanguage {
         Severity::Info
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {

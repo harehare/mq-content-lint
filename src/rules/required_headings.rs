@@ -20,6 +20,10 @@ impl Rule for RequiredHeadings {
         Severity::Warning
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         let expected = config
             .rule_options(self.id())
