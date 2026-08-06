@@ -150,11 +150,13 @@ cargo install mq-content-lint --features lsp
 ```
 
 `mq-content-lint-lsp` is a [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
-server, so any LSP-capable editor can get live diagnostics and quick-fix code actions by pointing
-it at the binary over stdio — it reuses the library directly rather than shelling out to the CLI
-and parsing its output. A [VS Code extension](./editors/vscode) built on it ships in this repo; it
-isn't on the Marketplace yet, so see that directory's README for running it from source. Other
-editors (Neovim, Helix, Zed, ...) can wire it up with their usual generic-LSP configuration,
+server, so any LSP-capable editor can get live diagnostics, hover text, and quick-fix code actions
+by pointing it at the binary over stdio — it reuses the library directly rather than shelling out
+to the CLI and parsing its output. Editing an `mq-content-lint.toml` re-lints every open document
+automatically, no server restart needed, for clients that support watched-file notifications
+(VS Code does out of the box). A [VS Code extension](./editors/vscode) built on it ships in this
+repo; it isn't on the Marketplace yet, so see that directory's README for running it from source.
+Other editors (Neovim, Helix, Zed, ...) can wire it up with their usual generic-LSP configuration,
 pointing at `mq-content-lint-lsp` for Markdown files.
 
 ## Configuration

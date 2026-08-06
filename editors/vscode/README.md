@@ -24,13 +24,16 @@ the server isn't on your `PATH`, set `mqContentLint.serverPath` to its full path
   its rule id (e.g. `image_missing_alt`) so the Problems panel shows exactly which rule fired.
 - Fixable diagnostics offer a quick fix (lightbulb / <kbd>Cmd</kbd>+<kbd>.</kbd>) that applies
   exactly what `mq-content-lint --fix` would.
+- Hovering a diagnostic shows the rule's help text (the same "how to fix this" hint the CLI prints
+  below each finding).
 - **mq-content-lint: Fix Document** command (Command Palette) applies every available quick fix
   across the whole file in one edit, matching `mq-content-lint --fix`'s single-pass semantics.
 - **mq-content-lint: Restart Server** command, and the server restarts automatically whenever an
   `mqContentLint.*` setting changes.
 - Config resolution (including [config cascading](../../README.md#configuration)) is handled
   server-side per file, the same as the CLI — there's no separate config-path setting to keep in
-  sync.
+  sync. Editing an `mq-content-lint.toml` re-lints every open document automatically (no restart
+  needed) whenever VS Code supports watched-file notifications, which it does out of the box.
 
 ## Settings
 
