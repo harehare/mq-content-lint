@@ -125,6 +125,24 @@ Prefer to install manually instead? The equivalent without the action:
     sarif_file: mq-content-lint.sarif
 ```
 
+### pre-commit
+
+This repo is also a [pre-commit](https://pre-commit.com) hook repo (`.pre-commit-hooks.yaml`).
+Add it to a project's `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/harehare/mq-content-lint
+    rev: v1.0.0 # a tag; see the repo's releases for the latest
+    hooks:
+      - id: mq-content-lint       # report only
+      # - id: mq-content-lint-fix  # or auto-fix on commit instead
+```
+
+Both hooks use `language: rust`, so pre-commit builds `mq-content-lint` straight from this repo at
+the pinned `rev` the first time the hook runs (cached after that) — nothing to install manually,
+and no dependency on a crates.io release existing yet.
+
 ### Editors
 
 ```bash

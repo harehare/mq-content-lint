@@ -1,0 +1,17 @@
+# Hook definitions for the pre-commit framework (https://pre-commit.com). Referencing this repo
+# in a downstream project's .pre-commit-config.yaml (see README's "pre-commit" section) is enough
+# for pre-commit to build mq-content-lint itself — `language: rust` has pre-commit run `cargo
+# install --path .` against this repo at the pinned `rev`, so a pre-commit user doesn't need
+# mq-content-lint installed separately, and this works even before a crates.io release exists.
+-   id: mq-content-lint
+    name: mq-content-lint
+    description: Lint Markdown content with mq-content-lint (https://github.com/harehare/mq-content-lint).
+    entry: mq-content-lint
+    language: rust
+    types: [markdown]
+-   id: mq-content-lint-fix
+    name: mq-content-lint --fix
+    description: Lint and auto-fix Markdown content with mq-content-lint.
+    entry: mq-content-lint --fix
+    language: rust
+    types: [markdown]
