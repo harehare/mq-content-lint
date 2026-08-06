@@ -1,0 +1,90 @@
+name: Test Action
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["action.yml", ".github/workflows/test-action.yml", "src/**", "Cargo.toml", "Cargo.lock"]
+  pull_request:
+    branches: ["main"]
+    paths: ["action.yml", ".github/workflows/test-action.yml", "src/**", "Cargo.toml", "Cargo.lock"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Installs the binary built from this checkout so the action below picks it up via its
+      # "already on PATH" check instead of trying `cargo install mq-content-lint` from
+      # crates.io — this validates action.yml's run logic against the in-progress source, not
+      # whatever the latest published release happens to be.
+      - name: Install mq-content-lint from this checkout
+        run: cargo install --path . --locked
+
+      - name: Fixture with a lint issue
+        run: |
+          mkdir -p fixture
+          printf '#Missing space\n' > fixture/bad.md
+          # An explicit, minimal config isolates this test from this repo's own root
+          # mq-content-lint.toml (which config auto-discovery would otherwise pick up, since
+          # discovery walks up from the current directory, not the linted file's directory).
+          printf '' > fixture-config.toml
+
+      - name: Run the action (text format, expect failure)
+        id: text
+        uses: ./
+        continue-on-error: true
+        with:
+          path: fixture/
+          config: fixture-config.toml
+          format: text
+
+      - name: Assert the text run failed (diagnostics were found)
+        if: steps.text.outcome != 'failure'
+        run: |
+          echo "expected the action to fail on fixture/bad.md's diagnostic" >&2
+          exit 1
+
+      - name: Run the action (sarif format)
+        id: sarif
+        uses: ./
+        continue-on-error: true
+        with:
+          path: fixture/
+          config: fixture-config.toml
+          format: sarif
+
+      - name: Assert the SARIF output was produced and named via the action's output
+        run: |
+          test -n "${{ steps.sarif.outputs.sarif-file }}"
+          test -f "${{ steps.sarif.outputs.sarif-file }}"
+          grep -q '"version": "2.1.0"' "${{ steps.sarif.outputs.sarif-file }}"
+
+      - name: Reset the fixture before testing --fix
+        run: |
+          rm -rf fixture
+          mkdir -p fixture
+          printf '#Missing space\n' > fixture/bad.md
+
+      - name: Run the action with --fix
+        uses: ./
+        with:
+          path: fixture/
+          config: fixture-config.toml
+          fix: 'true'
+
+      - name: Assert --fix rewrote the file
+        run: grep -q '^# Missing space$' fixture/bad.md

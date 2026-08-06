@@ -9,8 +9,8 @@ consistency, whitespace, link/image hygiene, required front matter — comprehen
 [markdownlint](https://github.com/DavidAnson/markdownlint)'s rule set, expressed against mq's
 node model instead of a bespoke rule engine. It is a separate tool from
 [`mq-lint`](https://github.com/harehare/mq/tree/main/crates/mq-lint), which lints `.mq` query
-scripts, not Markdown content, and from user-supplied mq expressions as rules, which is a later
-stage of this project (see [Non-goals](#non-goals)).
+scripts, not Markdown content. Beyond the built-in rules, config files can also define their own
+[custom rules](#custom-rules) as mq queries.
 
 ## Install
 
@@ -83,9 +83,37 @@ starts are picked up too.
 
 ### GitHub Actions
 
+This repo ships its own composite action (`action.yml`) — it installs `mq-content-lint` (cached,
+and skipped entirely if a step earlier in the job already put it on `PATH`) and runs it, so a
+workflow doesn't need to hand-roll the install step:
+
+```yaml
+- uses: harehare/mq-content-lint@v1
+  with:
+    path: docs/
+```
+
+Pass `fix: 'true'` to auto-fix instead of just reporting, or wire the `sarif-file` output into
+GitHub code scanning:
+
+```yaml
+- uses: harehare/mq-content-lint@v1
+  id: lint
+  with:
+    path: docs/
+    format: sarif
+  continue-on-error: true
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: ${{ steps.lint.outputs.sarif-file }}
+```
+
+See `action.yml`'s `inputs`/`outputs` for the full list (`config`, `min-severity`, `version`, ...).
+Prefer to install manually instead? The equivalent without the action:
+
 ```yaml
 - name: Install mq-content-lint
-  run: cargo install mq-content-lint
+  run: cargo install mq-content-lint --locked
 - name: Lint docs
   run: mq-content-lint --format sarif docs/ > mq-content-lint.sarif
   continue-on-error: true
@@ -93,6 +121,12 @@ starts are picked up too.
   with:
     sarif_file: mq-content-lint.sarif
 ```
+
+### Editors
+
+A [VS Code extension](./editors/vscode) shells out to the CLI to show diagnostics inline and
+run `--fix` from the Command Palette. It isn't on the Marketplace yet — see that directory's
+README for running it from source.
 
 ## Configuration
 
