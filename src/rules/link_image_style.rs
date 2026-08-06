@@ -80,6 +80,10 @@ impl Rule for LinkImageStyle {
         });
         diagnostics
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["autolink", "inline", "full", "collapsed", "shortcut"]
+    }
 }
 
 #[cfg(test)]

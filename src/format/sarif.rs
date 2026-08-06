@@ -136,6 +136,7 @@ mod tests {
             message: "found a TODO".to_string(),
             severity: Severity::Warning,
             range: None,
+            fix: None,
         });
         let results = vec![("test.md".to_string(), vec![item])];
         let mut buf = Vec::new();

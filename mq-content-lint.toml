@@ -5,6 +5,10 @@
 # config file at all, every rule runs at its default severity except a handful that are opt-in
 # by nature (missing_front_matter_key, required_headings, proper_names, link_image_style — see
 # README for why). Run `mq-content-lint --list-rules` for the full list of rule ids and defaults.
+#
+# Config files cascade: every mq-content-lint.toml between the linted file and the filesystem
+# root is loaded, farthest-first, so a closer file's settings override the same key from a
+# farther one (custom_rules accumulate instead). See README's Configuration section.
 
 [rules]
 # A rule accepts a bool (enable/disable at its default severity), a severity string ("error",
@@ -32,9 +36,12 @@ style = "dash"
 required_keys = ["title"]
 
 # Custom rules: your own mq queries as lint rules, run alongside the built-ins above. Every node
-# a rule's query selects becomes a diagnostic at that node's position. See README for details.
+# a rule's query selects becomes a diagnostic at that node's position. `fix` is optional — when
+# set, it's run with the matched node as input and its (stringified) result replaces that node
+# under --fix/--diff. See README for details.
 [[custom_rules]]
 id = "no_todo"
 query = 'select(contains(to_text(), "TODO"))'
 message = "found a TODO marker"
-severity = "warning" # optional, defaults to "warning"
+severity = "warning"            # optional, defaults to "warning"
+fix = 'replace("TODO", "DONE")' # optional

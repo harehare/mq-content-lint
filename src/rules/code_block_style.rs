@@ -42,6 +42,10 @@ impl Rule for CodeBlockStyle {
         });
         diagnostics
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["style"]
+    }
 }
 
 #[cfg(test)]

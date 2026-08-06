@@ -171,6 +171,7 @@ mod tests {
             message: "found a TODO".to_string(),
             severity: Severity::Warning,
             range: None,
+            fix: None,
         });
         let mut buf = Vec::new();
         write_text_report(&mut buf, "test.md", &[item]).unwrap();

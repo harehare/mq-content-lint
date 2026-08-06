@@ -59,6 +59,10 @@ impl Rule for UlIndent {
         }
         diagnostics
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["indent"]
+    }
 }
 
 #[cfg(test)]

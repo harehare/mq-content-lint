@@ -1,0 +1,103 @@
+name: 'mq-content-lint'
+description: 'Lint Markdown content with mq-content-lint, a static content linter built on mq'
+author: 'harehare'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
+inputs:
+  path:
+    description: >
+      Space-separated files or directories to lint (passed through to mq-content-lint as
+      positional arguments). Directories are searched recursively for .md/.markdown files.
+    required: false
+    default: '.'
+  config:
+    description: 'Path to a mq-content-lint.toml config file. Auto-discovered if omitted.'
+    required: false
+    default: ''
+  fix:
+    description: 'Rewrite files in place, applying every diagnostic with a machine-applicable fix.'
+    required: false
+    default: 'false'
+  format:
+    description: 'Output format: text, json, or sarif.'
+    required: false
+    default: 'text'
+  min-severity:
+    description: 'Only report diagnostics at or above this severity: info, warning, or error.'
+    required: false
+    default: 'info'
+  version:
+    description: 'mq-content-lint version to install (cargo install --version). Defaults to the latest release.'
+    required: false
+    default: ''
+
+outputs:
+  sarif-file:
+    description: 'Path to the generated SARIF report (only set when format is sarif).'
+    value: ${{ steps.lint.outputs.sarif-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check for an existing mq-content-lint on PATH
+      id: which
+      shell: bash
+      run: |
+        if command -v mq-content-lint >/dev/null 2>&1; then
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Cache cargo-installed mq-content-lint
+      id: cache
+      if: steps.which.outputs.found != 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/mq-content-lint${{ runner.os == 'Windows' && '.exe' || '' }}
+        key: mq-content-lint-bin-${{ runner.os }}-${{ inputs.version || 'latest' }}
+
+    - name: Install mq-content-lint
+      if: steps.which.outputs.found != 'true' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        MQ_CONTENT_LINT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ -n "$MQ_CONTENT_LINT_VERSION" ]; then
+          cargo install mq-content-lint --locked --version "$MQ_CONTENT_LINT_VERSION"
+        else
+          cargo install mq-content-lint --locked
+        fi
+
+    - name: Run mq-content-lint
+      id: lint
+      shell: bash
+      env:
+        MQ_PATH: ${{ inputs.path }}
+        MQ_CONFIG: ${{ inputs.config }}
+        MQ_FIX: ${{ inputs.fix }}
+        MQ_FORMAT: ${{ inputs.format }}
+        MQ_MIN_SEVERITY: ${{ inputs.min-severity }}
+      run: |
+        set -uo pipefail
+
+        args=(--format "$MQ_FORMAT" --min-severity "$MQ_MIN_SEVERITY")
+        [ -n "$MQ_CONFIG" ] && args+=(--config "$MQ_CONFIG")
+        [ "$MQ_FIX" = "true" ] && args+=(--fix)
+        # Intentional word-splitting: MQ_PATH is documented as space-separated arguments.
+        # shellcheck disable=SC2206
+        args+=($MQ_PATH)
+
+        if [ "$MQ_FORMAT" = "sarif" ]; then
+          mq-content-lint "${args[@]}" > mq-content-lint-results.sarif
+          status=$?
+          echo "sarif-file=mq-content-lint-results.sarif" >> "$GITHUB_OUTPUT"
+        else
+          mq-content-lint "${args[@]}"
+          status=$?
+        fi
+
+        exit "$status"

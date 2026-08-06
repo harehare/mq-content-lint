@@ -38,6 +38,10 @@ impl Rule for NoHardTabs {
         }
         diagnostics
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["spaces"]
+    }
 }
 
 #[cfg(test)]

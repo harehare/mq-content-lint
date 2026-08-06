@@ -56,6 +56,10 @@ impl Rule for LineLength {
             })
             .collect()
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["limit", "code_blocks"]
+    }
 }
 
 #[cfg(test)]

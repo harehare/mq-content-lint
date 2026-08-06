@@ -55,6 +55,10 @@ impl Rule for RequiredHeadings {
             self.default_severity(),
         )]
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["headings"]
+    }
 }
 
 #[cfg(test)]

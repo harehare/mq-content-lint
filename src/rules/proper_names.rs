@@ -88,6 +88,10 @@ impl Rule for ProperNames {
         });
         diagnostics
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["names"]
+    }
 }
 
 #[cfg(test)]
