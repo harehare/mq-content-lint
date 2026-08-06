@@ -87,17 +87,29 @@ pub struct CustomRuleError {
 /// A rule whose query fails to parse or evaluate is reported as an error rather than silently
 /// skipped: a typo in a hand-written mq query is a config mistake the user needs to see, not a
 /// rule that quietly never fires.
+///
+/// All rules (and any of their `fix` queries) share a single [`mq_lang::DefaultEngine`] rather
+/// than each getting a fresh one: constructing an engine and loading the builtin module means
+/// parsing and defining mq's entire standard library, which dominates the cost of evaluating a
+/// typical rule's query by roughly an order of magnitude. A custom rule redefining a name via
+/// `def`/`let` would (unlike with a fresh-per-rule engine) leak that definition into rules run
+/// after it in the same pass — an acceptable trade-off given custom rule queries are ordinary
+/// read-only selectors in practice, not scripts that install shared state on purpose.
 pub fn run(rules: &[CustomRule], doc: &mq_markdown::Markdown) -> Result<Vec<CustomDiagnostic>, CustomRuleError> {
+    if rules.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+
+    let nodes: Vec<mq_lang::RuntimeValue> = doc.nodes.iter().cloned().map(mq_lang::RuntimeValue::from).collect();
+
     let mut diagnostics = Vec::new();
 
     for rule in rules {
-        let mut engine = mq_lang::DefaultEngine::default();
-        engine.load_builtin_module();
-
-        let nodes: Vec<mq_lang::RuntimeValue> = doc.nodes.iter().cloned().map(mq_lang::RuntimeValue::from).collect();
-
         let result = engine
-            .eval(&rule.query, nodes.into_iter())
+            .eval(&rule.query, nodes.clone().into_iter())
             .map_err(|e| CustomRuleError {
                 rule_id: rule.id.clone(),
                 reason: e.to_string(),
@@ -111,7 +123,7 @@ pub fn run(rules: &[CustomRule], doc: &mq_markdown::Markdown) -> Result<Vec<Cust
                 let fix = rule
                     .fix
                     .as_deref()
-                    .map(|fix_query| eval_fix(rule, fix_query, &node, range))
+                    .map(|fix_query| eval_fix(&mut engine, rule, fix_query, &node, range))
                     .transpose()?;
                 diagnostics.push(CustomDiagnostic {
                     rule_id: rule.id.clone(),
@@ -131,14 +143,12 @@ pub fn run(rules: &[CustomRule], doc: &mq_markdown::Markdown) -> Result<Vec<Cust
 /// Evaluates `fix_query` with `node` as its sole input, producing a [`Fix`] that replaces
 /// `node`'s full span with the query's result (stringified via `Display` — see [`CustomRule::fix`]).
 fn eval_fix(
+    engine: &mut mq_lang::DefaultEngine,
     rule: &CustomRule,
     fix_query: &str,
     node: &mq_markdown::Node,
     range: Range,
 ) -> Result<Fix, CustomRuleError> {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-
     let result = engine
         .eval(fix_query, std::iter::once(mq_lang::RuntimeValue::from(node.clone())))
         .map_err(|e| CustomRuleError {
