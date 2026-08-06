@@ -35,12 +35,21 @@ pub(super) fn write_sarif_report(w: &mut impl Write, results: &[(String, Vec<Rep
         })
         .collect();
 
-    // Built-in rules are always declared; custom rules are declared too, but only the ones that
-    // actually fired in this run — there's no fixed registry of them to enumerate up front the
-    // way there is for built-ins.
+    // Built-in rules are always declared, with a shortDescription so a SARIF viewer (GitHub
+    // Code Scanning's Security tab, VS Code's SARIF viewer, ...) can show what a rule checks
+    // without the reader having to cross-reference the README. Custom rules are declared too,
+    // but only the ones that actually fired in this run — there's no fixed registry of them to
+    // enumerate up front the way there is for built-ins, and no general description beyond
+    // whatever `message` their diagnostics already carry.
     let mut rules: Vec<serde_json::Value> = mq_content_lint::RuleId::ALL
         .iter()
-        .map(|id| serde_json::json!({"id": id.as_str(), "name": id.as_str()}))
+        .map(|id| {
+            serde_json::json!({
+                "id": id.as_str(),
+                "name": id.as_str(),
+                "shortDescription": {"text": id.description()},
+            })
+        })
         .collect();
     let custom_rule_ids: BTreeSet<&str> = results
         .iter()
@@ -118,6 +127,13 @@ mod tests {
             "test.md"
         );
         assert_eq!(result["locations"][0]["physicalLocation"]["region"]["startLine"], 1);
+
+        let rules = json["runs"][0]["tool"]["driver"]["rules"].as_array().unwrap();
+        let rule = rules.iter().find(|r| r["id"] == "image_missing_alt").unwrap();
+        assert_eq!(
+            rule["shortDescription"]["text"],
+            mq_content_lint::RuleId::ImageMissingAlt.description()
+        );
     }
 
     #[test]

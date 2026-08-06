@@ -1,5 +1,9 @@
 # mq-content-lint
 
+> [!NOTE]
+> This project is developed entirely on [Claude Code](https://claude.ai/code) for Android — no
+> desktop or laptop development environment is used.
+
 Static content linter for Markdown, built on [mq](https://github.com/harehare/mq)'s
 `mq-markdown` AST — the same document model mq's own query engine and `mq-lint` use, reused here
 instead of hand-rolling another Markdown parser.
@@ -115,6 +119,9 @@ GitHub code scanning:
     sarif_file: ${{ steps.lint.outputs.sarif-file }}
 ```
 
+Each SARIF result's rule declaration carries a `shortDescription` (the same text `--explain`
+prints), so GitHub's code scanning UI shows what a finding checks, not just its bare rule id.
+
 See `action.yml`'s `inputs`/`outputs` for the full list (`config`, `min-severity`, `version`, ...).
 Prefer to install manually instead? The equivalent without the action:
 
@@ -156,12 +163,15 @@ cargo install mq-content-lint --features lsp
 `mq-content-lint-lsp` is a [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
 server, so any LSP-capable editor can get live diagnostics, hover text, and quick-fix code actions
 by pointing it at the binary over stdio — it reuses the library directly rather than shelling out
-to the CLI and parsing its output. Editing an `mq-content-lint.toml` re-lints every open document
-automatically, no server restart needed, for clients that support watched-file notifications
-(VS Code does out of the box). A [VS Code extension](./editors/vscode) built on it ships in this
-repo; it isn't on the Marketplace yet, so see that directory's README for running it from source.
-Other editors (Neovim, Helix, Zed, ...) can wire it up with their usual generic-LSP configuration,
-pointing at `mq-content-lint-lsp` for Markdown files.
+to the CLI and parsing its output. Every diagnostic with a machine-applicable fix offers it as a
+quick fix; every diagnostic also offers a second quick fix that inserts a [disable
+comment](#inline-disable-comments) for just that line, for the cases a fix can't cover. Editing an
+`mq-content-lint.toml` re-lints every open document automatically, no server restart needed, for
+clients that support watched-file notifications (VS Code does out of the box). A [VS Code
+extension](./editors/vscode) built on it ships in this repo; it isn't on the Marketplace yet, so
+see that directory's README for running it from source. Other editors (Neovim, Helix, Zed, ...) can
+wire it up with their usual generic-LSP configuration, pointing at `mq-content-lint-lsp` for
+Markdown files.
 
 ## Configuration
 
