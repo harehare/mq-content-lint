@@ -47,6 +47,7 @@ impl Rule for LinkImageStyle {
         }
 
         let mut diagnostics = Vec::new();
+        let byte_index = crate::text::LineByteIndex::new(source);
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let position = match node {
                 Node::Link(l) => l.position.clone(),
@@ -56,7 +57,7 @@ impl Rule for LinkImageStyle {
                 _ => return,
             };
             let Some(position) = position else { return };
-            let Some(raw) = crate::fix::slice(source, position.clone().into()) else {
+            let Some(raw) = crate::fix::slice(source, &byte_index, position.clone().into()) else {
                 return;
             };
             let found = detect_style(raw);
