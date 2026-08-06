@@ -27,8 +27,9 @@ both in one go — see [Editors](#editors).
 # Lint one file
 mq-content-lint README.md
 
-# Lint a directory recursively (.md / .markdown files; dotfiles/dotdirs, node_modules,
-# target, and .git are skipped)
+# Lint a directory recursively (.md / .markdown files; dotfiles/dotdirs, node_modules, and
+# target are always skipped, along with anything .gitignore'd, .mq-content-lintignore'd,
+# or matched by the config's `ignore` patterns — see Configuration)
 mq-content-lint docs/
 
 # Read from stdin
@@ -49,6 +50,9 @@ mq-content-lint --format sarif docs/ > report.sarif
 
 # List built-in rules, their default severity, and the mq selector each corresponds to
 mq-content-lint --list-rules
+
+# Print a rule's description, markdownlint equivalent, severity, selector, and options
+mq-content-lint --explain line_length
 ```
 
 Exit code is non-zero if any diagnostic at or above `--min-severity` (default `info`, i.e. "any
@@ -170,8 +174,8 @@ directory up to the filesystem root is loaded, not just the nearest one. They're
 farthest-first, so a closer file's `[rules]` entries win over the same key from a farther one —
 put shared defaults at a monorepo's root and narrow them per-package. `front_matter.required_keys`
 is inherited from the nearest ancestor that sets any (an empty/unset one in a closer file doesn't
-clear an inherited value); `custom_rules` accumulate across every level instead of overriding,
-since they're typically additive checks rather than competing settings.
+clear an inherited value); `custom_rules` and `ignore` accumulate across every level instead of
+overriding, since they're typically additive rather than competing settings.
 
 A rule-specific key inside `[rules.<id>]` is validated against that rule's known options — a typo
 like `[rules.line_length] limt = 100` is a config error at load time, not a silently-ignored key.
@@ -207,6 +211,55 @@ allowed until you disallow one). Each has no universally sensible default, so "d
 the deterministic no-config behavior for those, not "silently guess one." Rule ids, default
 severities, and mq selectors are listed below and are stable across releases within a major
 version, as are diagnostic positions and JSON/SARIF field names — safe to depend on in CI.
+
+### Ignoring files
+
+When linting a directory, `mq-content-lint` skips `node_modules`/`target` unconditionally, plus
+dotfiles/dotdirs, plus anything excluded by a `.gitignore`, `.git/info/exclude`, or global
+gitignore it finds along the way (only inside an actual git repository — same rule ripgrep and
+most other modern CLI tools follow). Two more ways to exclude paths, both gitignore-syntax:
+
+- A `.mq-content-lintignore` file, anywhere in the tree being walked — for exclusions a project
+  doesn't want (or can't put, if the file itself is tracked) in `.gitignore`.
+- An `ignore` array in `mq-content-lint.toml`:
+
+  ```toml
+  ignore = ["vendor/**", "CHANGELOG.md", "!vendor/keep-this.md"]
+  ```
+
+  (a leading `!` re-includes a path an earlier pattern excluded, same as `.gitignore`). This
+  accumulates across cascaded config files rather than overriding, like `custom_rules` does.
+
+None of this applies to a file named directly on the command line — `mq-content-lint
+vendor/lib.md` always lints it, ignore patterns or not, the same way `git add <path>` does.
+
+### Inline disable comments
+
+A single false positive doesn't need a config change — drop an HTML comment where the problem is:
+
+```markdown
+<!-- mq-content-lint-disable line_length -->
+This line can be as long as it wants to be now, no matter what `[rules.line_length]` says.
+<!-- mq-content-lint-enable line_length -->
+
+<!-- mq-content-lint-disable-next-line no_bare_urls -->
+See https://example.com for details.
+```
+
+Four directives, each its own HTML comment on its own line (a comment sharing a line with other
+text isn't recognized, on purpose — keeps the syntax unambiguous to spot):
+
+| Directive | Effect |
+| --- | --- |
+| `<!-- mq-content-lint-disable [id, ...] -->` | Suppress the named rules (or every rule, with no ids) from this line onward. |
+| `<!-- mq-content-lint-enable [id, ...] -->` | Re-enable the named rules (or every rule). |
+| `<!-- mq-content-lint-disable-line [id, ...] -->` | Suppress only on the comment's own line. |
+| `<!-- mq-content-lint-disable-next-line [id, ...] -->` | Suppress only on the following line. |
+
+Rule ids are comma-separated and work identically for built-in rules and [custom
+rules](#custom-rules) — matched against whatever id the diagnostic reports. Applied uniformly by
+the CLI, `--fix`/`--diff`, and the LSP server, since they all funnel through the same lint entry
+point.
 
 ## Built-in rules
 

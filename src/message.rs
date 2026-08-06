@@ -297,6 +297,74 @@ impl RuleId {
             | RuleId::SingleTrailingNewline => None,
         }
     }
+
+    /// A one-line description of what the rule checks, cross-referenced against its
+    /// [markdownlint](https://github.com/DavidAnson/markdownlint) equivalent (`MDxxx`) where one
+    /// exists — the same text as this variant's doc comment, kept in sync by hand since doc
+    /// comments aren't readable at runtime. Backs `mq-content-lint --explain <rule-id>`.
+    pub fn description(&self) -> &'static str {
+        match self {
+            RuleId::HeadingHierarchySkip => "MD001: heading levels should only increment by one level at a time.",
+            RuleId::ImageMissingAlt => "MD045: images should have alternate text (alt text).",
+            RuleId::MissingFrontMatterKey => "Required front matter keys (not a markdownlint rule).",
+            RuleId::HeadingStyle => "MD003: heading style should be consistent (atx, atx_closed, or setext).",
+            RuleId::NoMissingSpaceAtx => "MD018: no space after `#` on an ATX-style heading.",
+            RuleId::NoMultipleSpaceAtx => "MD019: multiple spaces after `#` on an ATX-style heading.",
+            RuleId::NoMissingSpaceClosedAtx => "MD020: no space inside the hashes on a closed ATX-style heading.",
+            RuleId::NoMultipleSpaceClosedAtx => {
+                "MD021: multiple spaces inside the hashes on a closed ATX-style heading."
+            }
+            RuleId::BlanksAroundHeadings => "MD022: headings should be surrounded by blank lines.",
+            RuleId::HeadingStartLeft => "MD023: headings must start at the beginning of the line.",
+            RuleId::NoDuplicateHeading => "MD024: multiple headings with the same text.",
+            RuleId::SingleH1 => "MD025: multiple top-level (h1) headings in the same document.",
+            RuleId::NoTrailingPunctuationHeading => "MD026: trailing punctuation in a heading.",
+            RuleId::NoEmphasisAsHeading => "MD036: emphasis used instead of a heading.",
+            RuleId::FirstLineHeading => "MD041: the first line in a file should be a top-level heading.",
+            RuleId::RequiredHeadings => "MD043: the document's headings should match a required structure.",
+            RuleId::UlStyle => "MD004: unordered list style should be consistent.",
+            RuleId::ListIndent => "MD005: inconsistent indentation for list items at the same level.",
+            RuleId::UlIndent => "MD007: unordered list indentation.",
+            RuleId::OlPrefix => "MD029: ordered list item prefixes should be consistent.",
+            RuleId::ListMarkerSpace => "MD030: spaces after list markers.",
+            RuleId::BlanksAroundLists => "MD032: lists should be surrounded by blank lines.",
+            RuleId::NoTrailingSpaces => "MD009: trailing spaces.",
+            RuleId::NoHardTabs => "MD010: hard tabs.",
+            RuleId::NoMultipleBlanks => "MD012: multiple consecutive blank lines.",
+            RuleId::LineLength => "MD013: line length.",
+            RuleId::NoMultipleSpaceBlockquote => "MD027: multiple spaces after the blockquote symbol.",
+            RuleId::NoBlanksBlockquote => "MD028: blank line inside a blockquote.",
+            RuleId::SingleTrailingNewline => "MD047: files should end with exactly one trailing newline.",
+            RuleId::FencedCodeLanguage => "MD040: fenced code blocks should have a language specified.",
+            RuleId::CodeBlockStyle => "MD046: code block style should be consistent (fenced vs. indented).",
+            RuleId::CodeFenceStyle => "MD048: code fence style should be consistent (backtick vs. tilde).",
+            RuleId::BlanksAroundFences => "MD031: fenced code blocks should be surrounded by blank lines.",
+            RuleId::NoBareUrls => "MD034: bare URL used without angle brackets or link syntax.",
+            RuleId::NoReversedLinks => "MD011: reversed link syntax, e.g. `(text)[url]` instead of `[text](url)`.",
+            RuleId::NoEmptyLinks => "MD042: links with no destination or only a placeholder like `#`.",
+            RuleId::ReferenceLinksImages => "MD052: a reference link/image uses a label with no matching definition.",
+            RuleId::LinkImageReferenceDefinitions => "MD053: a link/image reference definition is never used.",
+            RuleId::LinkImageStyle => {
+                "MD054: link/image style should be consistent (inline, reference, autolink, ...)."
+            }
+            RuleId::LinkFragments => "MD051: a link fragment (`#section`) doesn't match any heading in the document.",
+            RuleId::DescriptiveLinkText => r#"MD059: link text should be descriptive, not generic like "click here"."#,
+            RuleId::NoSpaceInLinks => "MD039: spaces inside link text brackets.",
+            RuleId::NoSpaceInEmphasis => "MD037: spaces inside emphasis markers.",
+            RuleId::NoSpaceInCode => "MD038: spaces inside code span backticks.",
+            RuleId::EmphasisStyle => "MD049: emphasis style should be consistent (`*text*` vs. `_text_`).",
+            RuleId::StrongStyle => "MD050: strong style should be consistent (`**text**` vs. `__text__`).",
+            RuleId::NoInlineHtml => "MD033: inline HTML.",
+            RuleId::ProperNames => "MD044: proper names should use the configured capitalization.",
+            RuleId::CommandsShowOutput => "MD014: `$` shown before commands with no output shown.",
+            RuleId::HrStyle => "MD035: horizontal rule style should be consistent.",
+            RuleId::TablePipeStyle => "MD055: table pipe style should be consistent (leading/trailing pipes).",
+            RuleId::TableColumnCount => {
+                "MD056: every row in a table should have the same number of cells as the header."
+            }
+            RuleId::BlanksAroundTables => "MD058: tables should be surrounded by blank lines.",
+        }
+    }
 }
 
 impl fmt::Display for RuleId {
@@ -731,6 +799,13 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), count, "duplicate rule id string");
+    }
+
+    #[test]
+    fn every_rule_id_has_a_non_empty_description() {
+        for id in RuleId::ALL {
+            assert!(!id.description().is_empty(), "{id} has no description");
+        }
     }
 
     #[test]

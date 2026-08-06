@@ -85,9 +85,10 @@ impl From<CustomDiagnostic> for ReportItem {
 }
 
 /// Runs both built-in and custom rules against `doc`/`source`, merging their diagnostics into a
-/// single position-sorted list. The shared entry point behind the CLI, `--fix`, and the LSP
-/// server — none of them should reimplement "run the built-ins, run the custom rules, merge, and
-/// sort" on their own.
+/// single position-sorted list and dropping anything an inline `<!-- mq-content-lint-disable -->`
+/// comment (see [`crate::disable_comments`]) suppresses. The shared entry point behind the CLI,
+/// `--fix`, and the LSP server — none of them should reimplement "run the built-ins, run the
+/// custom rules, merge, sort, and honor inline disable comments" on their own.
 pub fn lint(
     doc: &mq_markdown::Markdown,
     source: &str,
@@ -104,6 +105,14 @@ pub fn lint(
     items.extend(custom.into_iter().map(ReportItem::from));
 
     items.sort_by_key(|item| item.range().map(|r| (r.start_line, r.start_column)));
+
+    let disabled = crate::disable_comments::scan(source);
+    items.retain(|item| {
+        !item
+            .range()
+            .is_some_and(|r| disabled.suppresses(item.rule_id(), r.start_line))
+    });
+
     Ok(items)
 }
 
@@ -133,6 +142,38 @@ mod tests {
         assert_eq!(items[0].range().unwrap().start_line, 1);
         assert_eq!(items[1].rule_id(), "image_missing_alt");
         assert_eq!(items[1].range().unwrap().start_line, 3);
+    }
+
+    #[test]
+    fn lint_honors_an_inline_disable_comment() {
+        let source = "# Title\n\n<!-- mq-content-lint-disable image_missing_alt -->\n\n![](missing-alt.png)\n";
+        let doc: mq_markdown::Markdown = source.parse().unwrap();
+        let config = LintConfig::default();
+        let linter = Linter::with_default_rules();
+
+        let items = lint(&doc, source, &linter, &config).unwrap();
+
+        assert!(items.iter().all(|item| item.rule_id() != "image_missing_alt"));
+    }
+
+    #[test]
+    fn lint_honors_an_inline_disable_comment_for_a_custom_rule() {
+        let source = "<!-- mq-content-lint-disable no_todo -->\n\nTODO: fix this\n";
+        let doc: mq_markdown::Markdown = source.parse().unwrap();
+        let config = LintConfig::from_toml_str(
+            r#"
+            [[custom_rules]]
+            id = "no_todo"
+            query = 'select(contains(to_text(), "TODO"))'
+            message = "found a TODO marker"
+            "#,
+        )
+        .unwrap();
+        let linter = Linter::with_default_rules();
+
+        let items = lint(&doc, source, &linter, &config).unwrap();
+
+        assert!(items.iter().all(|item| item.rule_id() != "no_todo"));
     }
 
     #[test]

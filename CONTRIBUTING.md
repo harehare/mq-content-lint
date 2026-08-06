@@ -33,6 +33,8 @@ follow the errors if you lose track of a step.
    - An arm in `RuleId::selector()` — the single `mq_lang::Selector` the rule's diagnostics center
      on (`Some(Selector::Heading(None))`, etc.), or `None` if the rule scans raw lines/spans
      multiple node types with no single selector (see `NoTrailingSpaces`, `LineLength`).
+   - An arm in `RuleId::description()` — same text as the `RuleId` variant's doc comment (`--explain`
+     reads this at runtime; doc comments aren't available there, so it's kept in sync by hand).
    - A `LintMessage` variant carrying whatever data the message needs to render (the offending
      value, the expected value, ...) — prefer this over a raw `String` so `Display`/`help()` stay
      exhaustive and typo-proof.

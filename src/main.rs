@@ -38,6 +38,11 @@ struct Cli {
     #[arg(long)]
     list_rules: bool,
 
+    /// Print a built-in rule's description, markdownlint equivalent (if any), default severity,
+    /// mq selector, and configurable options, then exit
+    #[arg(long, value_name = "RULE_ID")]
+    explain: Option<RuleId>,
+
     /// Rewrite files in place, applying every diagnostic with a machine-applicable fix in a
     /// single pass (reads stdin if no files are given, writing the fixed content to stdout).
     /// Diagnostics are not recomputed between fixes; run again to pick up anything a fix
@@ -105,6 +110,11 @@ fn run() -> io::Result<bool> {
         return Ok(false);
     }
 
+    if let Some(rule_id) = cli.explain {
+        explain_rule(&mut w, rule_id)?;
+        return Ok(false);
+    }
+
     let mut config = if let Some(path) = &cli.config {
         LintConfig::load_from_path(path).map_err(|e| io::Error::other(e.to_string()))?
     } else {
@@ -165,7 +175,7 @@ fn lint_files(
 ) -> io::Result<bool> {
     let mut paths = Vec::new();
     for arg in &cli.files {
-        collect_markdown_files(arg, &mut paths)?;
+        collect_markdown_files(arg, config, &mut paths)?;
     }
     paths.sort();
     paths.dedup();
@@ -315,38 +325,63 @@ fn fix_source(content: &str, linter: &Linter, config: &LintConfig) -> io::Result
     Ok((mq_content_lint::fix::apply_fixes(content, &fixes), fix_count))
 }
 
-/// Directory names that are never worth descending into when discovering Markdown files.
-const SKIP_DIR_NAMES: &[&str] = &["node_modules", "target", ".git"];
+/// Directory names that are never worth descending into when discovering Markdown files,
+/// regardless of `.gitignore`/`.mq-content-lintignore` contents.
+const SKIP_DIR_NAMES: &[&str] = &["node_modules", "target"];
+
+/// Custom ignore-file name consulted alongside `.gitignore` (same gitignore glob syntax) when
+/// walking a directory — for excluding paths a project doesn't want reported on `mq-content-lint
+/// .` but doesn't want (or can't put, if it's tracked) in `.gitignore`.
+const IGNORE_FILE_NAME: &str = ".mq-content-lintignore";
 
 /// Resolves a CLI file argument to concrete Markdown file paths, appending them to `out`.
 ///
-/// A directory is searched recursively for `.md`/`.markdown` files (skipping dotfiles/dotdirs
-/// and [`SKIP_DIR_NAMES`]). Anything else — an explicit file argument — is kept as-is regardless
-/// of extension (so `README` or a nonexistent path still reaches the caller's `read_to_string`
-/// and produces a clear error, rather than this function silently dropping it).
-fn collect_markdown_files(path: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
+/// A directory is searched recursively for `.md`/`.markdown` files, skipping: dotfiles/dotdirs,
+/// [`SKIP_DIR_NAMES`], anything matched by a `.gitignore`/`.git/info/exclude`/global gitignore or
+/// [`IGNORE_FILE_NAME`] file found along the way, and anything matched by `config.ignore`.
+/// Anything else — an explicit file argument — is kept as-is regardless of extension or ignore
+/// status (so `README` or a nonexistent path still reaches the caller's `read_to_string` and
+/// produces a clear error, and a file named directly on the command line is always linted even if
+/// it's `.gitignore`d), matching how `git add <path>` or `eslint <path>` treat an explicit
+/// argument.
+fn collect_markdown_files(path: &Path, config: &LintConfig, out: &mut Vec<PathBuf>) -> io::Result<()> {
     if path.is_dir() {
-        walk_dir_for_markdown(path, out)
+        walk_dir_for_markdown(path, config, out)
     } else {
         out.push(path.to_path_buf());
         Ok(())
     }
 }
 
-fn walk_dir_for_markdown(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
-    let mut entries: Vec<_> = std::fs::read_dir(dir)?.collect::<Result<_, _>>()?;
-    entries.sort_by_key(|e| e.file_name());
-    for entry in entries {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.starts_with('.') || SKIP_DIR_NAMES.contains(&name.as_ref()) {
-            continue;
+fn walk_dir_for_markdown(dir: &Path, config: &LintConfig, out: &mut Vec<PathBuf>) -> io::Result<()> {
+    // Patterns are matched relative to `dir` itself (the directory this walk started from), not
+    // the process's current directory — keeps this function independent of global process state.
+    let mut overrides_builder = ignore::gitignore::GitignoreBuilder::new(dir);
+    for pattern in &config.ignore {
+        overrides_builder
+            .add_line(None, pattern)
+            .map_err(|e| io::Error::other(format!("invalid `ignore` pattern {pattern:?}: {e}")))?;
+    }
+    let overrides = overrides_builder
+        .build()
+        .map_err(|e| io::Error::other(format!("building `ignore` patterns: {e}")))?;
+
+    let mut builder = ignore::WalkBuilder::new(dir);
+    builder.add_custom_ignore_filename(IGNORE_FILE_NAME);
+    builder.filter_entry(move |entry| {
+        let name = entry.file_name().to_string_lossy();
+        if SKIP_DIR_NAMES.contains(&name.as_ref()) {
+            return false;
         }
+        let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
+        !overrides.matched(entry.path(), is_dir).is_ignore()
+    });
+
+    for entry in builder.build() {
+        let entry = entry.map_err(|e| io::Error::other(format!("walking {}: {}", dir.display(), e)))?;
         let path = entry.path();
-        if path.is_dir() {
-            walk_dir_for_markdown(&path, out)?;
-        } else if is_markdown_file(&path) {
-            out.push(path);
+        if entry.file_type().is_some_and(|t| t.is_file()) && is_markdown_file(path) {
+            out.push(path.to_path_buf());
         }
     }
     Ok(())
@@ -379,6 +414,35 @@ fn list_rules(w: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+/// Prints `rule_id`'s description, default severity, mq selector, and configurable options
+/// (`--explain <rule-id>`) — a CLI-accessible substitute for browsing rule source or the README's
+/// rule table.
+fn explain_rule(w: &mut impl Write, rule_id: RuleId) -> io::Result<()> {
+    let rules = mq_content_lint::rules::all_rules();
+    let rule = rules
+        .iter()
+        .find(|r| r.id() == rule_id)
+        .expect("every RuleId has a matching Rule in all_rules()");
+
+    writeln!(w, "{}", rule_id.as_str().bright_cyan().bold())?;
+    writeln!(w, "{}", rule_id.description())?;
+    writeln!(w, "default severity: {}", rule.default_severity())?;
+    if let Some(selector) = rule_id.selector() {
+        writeln!(w, "mq selector:      {selector}")?;
+    }
+    if rule.option_keys().is_empty() {
+        writeln!(w, "options:          none")?;
+    } else {
+        writeln!(w, "options:          {}", rule.option_keys().join(", "))?;
+    }
+    writeln!(
+        w,
+        "disable it with:  [rules]\n                   {} = false",
+        rule_id.as_str()
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,6 +458,57 @@ mod tests {
             cli.files,
             expected_files.into_iter().map(PathBuf::from).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn test_cli_explain_parses_a_rule_id() {
+        let cli = Cli::try_parse_from(["mq-content-lint", "--explain", "heading_style"]).unwrap();
+        assert_eq!(cli.explain, Some(RuleId::HeadingStyle));
+        let cli = Cli::try_parse_from(["mq-content-lint"]).unwrap();
+        assert_eq!(cli.explain, None);
+    }
+
+    #[test]
+    fn test_cli_explain_rejects_an_unknown_rule_id() {
+        let result = Cli::try_parse_from(["mq-content-lint", "--explain", "not_a_real_rule"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_explain_rule_prints_description_severity_and_options() {
+        let mut out = Vec::new();
+        explain_rule(&mut out, RuleId::LineLength).unwrap();
+        let text = strip_ansi(&out);
+        assert!(text.contains("MD013: line length."));
+        assert!(text.contains("default severity: info"));
+        assert!(text.contains("limit"));
+        assert!(text.contains("line_length = false"));
+    }
+
+    #[test]
+    fn test_explain_rule_reports_no_options_for_a_rule_with_none() {
+        let mut out = Vec::new();
+        explain_rule(&mut out, RuleId::FirstLineHeading).unwrap();
+        let text = strip_ansi(&out);
+        assert!(text.contains("options:          none"));
+    }
+
+    fn strip_ansi(bytes: &[u8]) -> String {
+        let text = String::from_utf8_lossy(bytes);
+        let mut result = String::with_capacity(text.len());
+        let mut in_escape = false;
+        for ch in text.chars() {
+            if in_escape {
+                if ch == 'm' {
+                    in_escape = false;
+                }
+            } else if ch == '\u{1b}' {
+                in_escape = true;
+            } else {
+                result.push(ch);
+            }
+        }
+        result
     }
 
     #[test]
@@ -550,10 +665,76 @@ mod tests {
         std::fs::write(dir.join(".hidden/d.md"), "# d\n").unwrap();
 
         let mut out = Vec::new();
-        collect_markdown_files(&dir, &mut out).unwrap();
+        collect_markdown_files(&dir, &LintConfig::default(), &mut out).unwrap();
         out.sort();
 
         assert_eq!(out, vec![dir.join("a.md"), dir.join("sub/c.markdown")]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_collect_markdown_files_skips_hardcoded_skip_dirs() {
+        let dir = std::env::temp_dir().join(format!("mq-content-lint-skipdir-test-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("node_modules")).unwrap();
+        std::fs::write(dir.join("node_modules/pkg.md"), "# pkg\n").unwrap();
+        std::fs::write(dir.join("a.md"), "# a\n").unwrap();
+
+        let mut out = Vec::new();
+        collect_markdown_files(&dir, &LintConfig::default(), &mut out).unwrap();
+        out.sort();
+
+        assert_eq!(out, vec![dir.join("a.md")]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_collect_markdown_files_respects_configured_ignore_patterns() {
+        let dir = std::env::temp_dir().join(format!("mq-content-lint-ignore-cfg-test-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("vendor")).unwrap();
+        std::fs::write(dir.join("vendor/lib.md"), "# lib\n").unwrap();
+        std::fs::write(dir.join("a.md"), "# a\n").unwrap();
+
+        let config = LintConfig::from_toml_str("ignore = [\"vendor/**\"]\n").unwrap();
+        let mut out = Vec::new();
+        collect_markdown_files(&dir, &config, &mut out).unwrap();
+        out.sort();
+
+        assert_eq!(out, vec![dir.join("a.md")]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_collect_markdown_files_respects_a_dot_ignore_file() {
+        let dir = std::env::temp_dir().join(format!("mq-content-lint-ignorefile-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(".mq-content-lintignore"), "skip-me.md\n").unwrap();
+        std::fs::write(dir.join("skip-me.md"), "# skip\n").unwrap();
+        std::fs::write(dir.join("a.md"), "# a\n").unwrap();
+
+        let mut out = Vec::new();
+        collect_markdown_files(&dir, &LintConfig::default(), &mut out).unwrap();
+        out.sort();
+
+        assert_eq!(out, vec![dir.join("a.md")]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_collect_markdown_files_always_lints_an_explicit_file_argument_even_if_ignored() {
+        let dir = std::env::temp_dir().join(format!("mq-content-lint-explicit-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("skip-me.md");
+        std::fs::write(&path, "# skip\n").unwrap();
+        let config = LintConfig::from_toml_str("ignore = [\"skip-me.md\"]\n").unwrap();
+
+        let mut out = Vec::new();
+        collect_markdown_files(&path, &config, &mut out).unwrap();
+
+        assert_eq!(out, vec![path]);
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
