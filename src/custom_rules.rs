@@ -13,6 +13,17 @@
 //! arbitrary user-supplied string, so [`CustomDiagnostic`] is a separate, structurally similar
 //! type rather than a variant grafted onto the built-in machinery.
 //!
+//! `query` runs once per top-level node by default (`run` passes every node in as the query
+//! engine's input stream, and mq maps the query over each one — see [`run`]'s implementation).
+//! Starting a query with mq's `nodes` keyword switches it to run once against the *whole*
+//! document (every top-level node collected into one array) instead, which is what a rule needs
+//! if it depends on more than one node at once (a count, a document-wide constraint) rather than
+//! matching a single node's own shape. See the README's "Document-wide rules" section for the
+//! gotchas (a bare selector on the whole-document array is a map, not a filter — wrap it in
+//! `compact()` before counting) and a worked example. `query`/`fix` are plain strings, so nothing
+//! about either of these is specific to this crate: multi-line queries are just a TOML
+//! triple-quoted string (mq doesn't treat newlines as meaningful).
+//!
 //! ```rust
 //! use mq_content_lint::custom_rules::{self, CustomRule};
 //! use mq_content_lint::Severity;
@@ -246,6 +257,40 @@ mod tests {
         let result = run(&[rule("this is not valid mq (((")], &doc);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().rule_id, "test_rule");
+    }
+
+    #[test]
+    fn a_multi_line_toml_style_query_behaves_identically_to_a_one_liner() {
+        // Same query as `supports_select_expressions`, just formatted the way a TOML
+        // triple-quoted string (`query = '''...'''`) would carry it — mq doesn't treat newlines
+        // as meaningful, so this should match identically.
+        let doc: mq_markdown::Markdown = "![](missing.png)\n\n![alt text](present.png)\n".parse().unwrap();
+        let query = "select(\n  .image.alt == \"\"\n)";
+        let diagnostics = run(&[rule(query)], &doc).unwrap();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].range.unwrap().start_line, 1);
+    }
+
+    /// `nodes` gathers every top-level node into one array and runs the rest of the pipeline once
+    /// against it, instead of once per node — the mechanism the README's "Document-wide rules"
+    /// section documents for a rule that needs to see the whole document (a count, a cross-node
+    /// constraint) rather than matching a single node in isolation. `.h1` on that array is a map
+    /// (keeps the array's length, non-matches become `none`), so `compact()` before `len()` is
+    /// required to get the real count — this test also locks that pattern in as a documented,
+    /// working recipe rather than just README prose nobody verifies against a real mq upgrade.
+    #[test]
+    fn nodes_keyword_enables_a_document_wide_rule() {
+        let query = "nodes\n| let h1_count = len(compact(.h1))\n| if (gt(h1_count, 1)):\n    .h1\n  end";
+
+        let two_h1_doc: mq_markdown::Markdown = "# One\n\nBody\n\n# Two\n\nMore body\n".parse().unwrap();
+        let diagnostics = run(&[rule(query)], &two_h1_doc).unwrap();
+        assert_eq!(diagnostics.len(), 2, "both h1s should be flagged when there are 2");
+        assert_eq!(diagnostics[0].range.unwrap().start_line, 1);
+        assert_eq!(diagnostics[1].range.unwrap().start_line, 5);
+
+        let one_h1_doc: mq_markdown::Markdown = "# Only One\n\nBody\n\n## Sub\n\nMore body\n".parse().unwrap();
+        let diagnostics = run(&[rule(query)], &one_h1_doc).unwrap();
+        assert!(diagnostics.is_empty(), "a single h1 should not be flagged");
     }
 
     #[test]
