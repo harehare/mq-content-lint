@@ -36,7 +36,11 @@ inputs:
 outputs:
   sarif-file:
     description: 'Path to the generated SARIF report (only set when format is sarif).'
-    value: ${{ steps.lint.outputs.sarif-file }}
+    # A literal (not `steps.lint.outputs.*`) on purpose: composite action outputs mapped from a
+    # step's own outputs are dropped when that step exits non-zero — which "Run mq-content-lint"
+    # always does when there are diagnostics to report, the very case a SARIF-consuming caller
+    # cares about most. The filename this produces is fixed, so there's nothing to compute.
+    value: ${{ inputs.format == 'sarif' && 'mq-content-lint-results.sarif' || '' }}
 
 runs:
   using: 'composite'
@@ -93,11 +97,6 @@ runs:
 
         if [ "$MQ_FORMAT" = "sarif" ]; then
           mq-content-lint "${args[@]}" > mq-content-lint-results.sarif
-          status=$?
-          echo "sarif-file=mq-content-lint-results.sarif" >> "$GITHUB_OUTPUT"
         else
           mq-content-lint "${args[@]}"
-          status=$?
         fi
-
-        exit "$status"
