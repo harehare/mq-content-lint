@@ -253,10 +253,21 @@ impl LanguageServer for Backend {
             .context
             .diagnostics
             .into_iter()
-            .filter_map(|diagnostic| {
-                let index = diagnostic_index(&diagnostic)?;
-                let fix = state.entries.get(index)?.fix.as_ref()?;
-                Some(CodeActionOrCommand::CodeAction(fix_code_action(&uri, &diagnostic, fix)))
+            .flat_map(|diagnostic| {
+                let mut actions = Vec::new();
+                if let Some(index) = diagnostic_index(&diagnostic)
+                    && let Some(fix) = state.entries.get(index).and_then(|e| e.fix.as_ref())
+                {
+                    actions.push(CodeActionOrCommand::CodeAction(fix_code_action(&uri, &diagnostic, fix)));
+                }
+                if let Some(rule_id) = diagnostic_rule_id(&diagnostic) {
+                    actions.push(CodeActionOrCommand::CodeAction(disable_line_code_action(
+                        &uri,
+                        &diagnostic,
+                        &rule_id,
+                    )));
+                }
+                actions
             })
             .collect();
 
@@ -318,12 +329,19 @@ fn position_in_range(range: Range, position: Position) -> bool {
     after_start && before_end
 }
 
+/// Recovers the rule id [`to_lsp_diagnostic`] stashed in a diagnostic's `code` field — `None` for
+/// a document-level entry with no single rule behind it (e.g. a parse error), which has no
+/// `code` at all.
+fn diagnostic_rule_id(diagnostic: &Diagnostic) -> Option<String> {
+    match &diagnostic.code {
+        Some(NumberOrString::String(s)) => Some(s.clone()),
+        Some(NumberOrString::Number(n)) => Some(n.to_string()),
+        None => None,
+    }
+}
+
 fn hover_text(entry: &DiagnosticEntry) -> String {
-    let rule_id = match &entry.diagnostic.code {
-        Some(NumberOrString::String(s)) => s.clone(),
-        Some(NumberOrString::Number(n)) => n.to_string(),
-        None => String::new(),
-    };
+    let rule_id = diagnostic_rule_id(&entry.diagnostic).unwrap_or_default();
     match &entry.help {
         Some(help) => format!("**{rule_id}**: {}\n\nhelp: {help}", entry.diagnostic.message),
         None => format!("**{rule_id}**: {}", entry.diagnostic.message),
@@ -344,6 +362,30 @@ fn fix_code_action(uri: &Url, diagnostic: &Diagnostic, fix: &Fix) -> CodeAction 
             ..WorkspaceEdit::default()
         }),
         is_preferred: Some(true),
+        ..CodeAction::default()
+    }
+}
+
+/// Builds a quick fix that suppresses `rule_id` for just the diagnostic's line, by inserting a
+/// `<!-- mq-content-lint-disable-next-line RULE_ID -->` comment on a new line above it. Inserted
+/// above rather than appended to the diagnostic's own line because a disable directive only takes
+/// effect when it's the *entire* trimmed line — see `mq_content_lint::disable_comments`'s docs.
+/// Offered alongside (not instead of) a mechanical fix, and never marked preferred, so an editor's
+/// "apply preferred fix" still reaches for the real fix first.
+fn disable_line_code_action(uri: &Url, diagnostic: &Diagnostic, rule_id: &str) -> CodeAction {
+    let insert_at = Position::new(diagnostic.range.start.line, 0);
+    let edit = TextEdit {
+        range: Range::new(insert_at, insert_at),
+        new_text: format!("<!-- mq-content-lint-disable-next-line {rule_id} -->\n"),
+    };
+    CodeAction {
+        title: format!("mq-content-lint: disable {rule_id} for this line"),
+        kind: Some(CodeActionKind::QUICKFIX),
+        diagnostics: Some(vec![diagnostic.clone()]),
+        edit: Some(WorkspaceEdit {
+            changes: Some(HashMap::from([(uri.clone(), vec![edit])])),
+            ..WorkspaceEdit::default()
+        }),
         ..CodeAction::default()
     }
 }
@@ -501,6 +543,38 @@ mod tests {
         let entries = lint_to_lsp("# Title\n", &linter, &config);
         assert_eq!(entries.len(), 1);
         assert!(entries[0].diagnostic.message.contains("broken"));
+    }
+
+    #[test]
+    fn disable_line_code_action_inserts_a_disable_next_line_comment_above_the_diagnostic() {
+        let uri = Url::parse("file:///tmp/test.md").unwrap();
+        let diagnostic = Diagnostic {
+            range: Range::new(Position::new(4, 0), Position::new(4, 10)),
+            message: "bare URL used without angle brackets".to_string(),
+            ..Diagnostic::default()
+        };
+
+        let action = disable_line_code_action(&uri, &diagnostic, "no_bare_urls");
+
+        assert_eq!(action.kind, Some(CodeActionKind::QUICKFIX));
+        assert_ne!(action.is_preferred, Some(true));
+        let edits = &action.edit.unwrap().changes.unwrap()[&uri];
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].range, Range::new(Position::new(4, 0), Position::new(4, 0)));
+        assert_eq!(
+            edits[0].new_text,
+            "<!-- mq-content-lint-disable-next-line no_bare_urls -->\n"
+        );
+    }
+
+    #[test]
+    fn diagnostic_rule_id_reads_a_string_code_and_is_none_without_one() {
+        let with_code = Diagnostic {
+            code: Some(NumberOrString::String("no_bare_urls".to_string())),
+            ..Diagnostic::default()
+        };
+        assert_eq!(diagnostic_rule_id(&with_code), Some("no_bare_urls".to_string()));
+        assert_eq!(diagnostic_rule_id(&Diagnostic::default()), None);
     }
 
     #[test]
