@@ -18,6 +18,9 @@ scripts, not Markdown content. Beyond the built-in rules, config files can also 
 cargo install mq-content-lint
 ```
 
+Also want the [language server](#editors) (`mq-content-lint-lsp`)? Add `--features lsp` to install
+both in one go — see [Editors](#editors).
+
 ## Usage
 
 ```bash
@@ -124,9 +127,17 @@ Prefer to install manually instead? The equivalent without the action:
 
 ### Editors
 
-A [VS Code extension](./editors/vscode) shells out to the CLI to show diagnostics inline and
-run `--fix` from the Command Palette. It isn't on the Marketplace yet — see that directory's
-README for running it from source.
+```bash
+cargo install mq-content-lint --features lsp
+```
+
+`mq-content-lint-lsp` is a [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
+server, so any LSP-capable editor can get live diagnostics and quick-fix code actions by pointing
+it at the binary over stdio — it reuses the library directly rather than shelling out to the CLI
+and parsing its output. A [VS Code extension](./editors/vscode) built on it ships in this repo; it
+isn't on the Marketplace yet, so see that directory's README for running it from source. Other
+editors (Neovim, Helix, Zed, ...) can wire it up with their usual generic-LSP configuration,
+pointing at `mq-content-lint-lsp` for Markdown files.
 
 ## Configuration
 

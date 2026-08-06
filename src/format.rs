@@ -6,7 +6,7 @@ mod text;
 
 use std::io::{self, Write};
 
-use crate::report_item::ReportItem;
+use mq_content_lint::report_item::ReportItem;
 
 /// Diagnostic output format.
 #[derive(Clone, Copy, Debug, Default, PartialEq, clap::ValueEnum)]

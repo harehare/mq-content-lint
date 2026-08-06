@@ -20,6 +20,11 @@ name = "mq-content-lint"
 path = "src/main.rs"
 required-features = ["cli"]
 
+[[bin]]
+name = "mq-content-lint-lsp"
+path = "src/bin/lsp.rs"
+required-features = ["lsp"]
+
 [dependencies]
 clap = { version = "4.6.5", features = ["derive"], optional = true }
 colored = { version = "3.1.1", optional = true }
@@ -33,11 +38,20 @@ serde_json = "1.0.151"
 serde_yaml = "0.9.34"
 similar = { version = "2.7.0", optional = true }
 thiserror = "2.0.19"
+tokio = { version = "1.40.0", features = ["full"], optional = true }
 toml = "1.1.4"
+tower-lsp = { version = "0.20.0", optional = true }
 
 [features]
-default = []
+# `cli` on by default so `cargo install mq-content-lint` installs the binary out of the box.
+# Library consumers who only want `mq_content_lint::Linter` etc. should depend on this crate with
+# `default-features = false` to skip the CLI's dependencies (clap, colored, ...) entirely.
+default = ["cli"]
 cli = ["dep:clap", "dep:colored", "dep:miette", "dep:rayon", "dep:similar", "dep:notify"]
+# Opt-in (not part of `default`): `cargo install mq-content-lint --features lsp` installs both
+# the CLI and mq-content-lint-lsp; `--no-default-features --features lsp` installs only the LSP
+# server.
+lsp = ["dep:tokio", "dep:tower-lsp"]
 
 [dev-dependencies]
 rstest = "0.26.1"

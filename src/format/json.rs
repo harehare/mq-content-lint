@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::report_item::ReportItem;
+use mq_content_lint::report_item::ReportItem;
 
 /// Writes a single JSON array, one element per linted file, each carrying that file's
 /// diagnostics (built-in and custom-rule alike). Field names are stable across releases within a

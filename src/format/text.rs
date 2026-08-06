@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use colored::Colorize;
 use mq_content_lint::Severity;
 
-use crate::report_item::ReportItem;
+use mq_content_lint::report_item::ReportItem;
 
 /// Severities in the order categories are displayed, most severe first.
 const SEVERITY_ORDER: [Severity; 3] = [Severity::Error, Severity::Warning, Severity::Info];

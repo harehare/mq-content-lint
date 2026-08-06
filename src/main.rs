@@ -1,5 +1,4 @@
 mod format;
-mod report_item;
 mod watch;
 
 use std::io::{self, BufWriter, Read, Write};
@@ -10,9 +9,9 @@ use std::str::FromStr;
 use clap::Parser;
 use colored::Colorize;
 use format::OutputFormat;
+use mq_content_lint::report_item::ReportItem;
 use mq_content_lint::{LintConfig, Linter, RuleId, Severity};
 use rayon::prelude::*;
-use report_item::ReportItem;
 
 /// Static content linter for Markdown, built on mq's AST and selectors.
 #[derive(Parser)]
@@ -284,8 +283,7 @@ fn compute_diff(label: &str, old: &str, new: &str) -> String {
 }
 
 /// Parses `content` as Markdown and returns built-in plus custom-rule diagnostics at or above
-/// `min_severity`, merged and sorted by position (built-in and custom rules share no ordering
-/// otherwise, since they run as two separate passes).
+/// `min_severity`, merged and sorted by position via [`mq_content_lint::report_item::lint`].
 fn lint_content(
     content: &str,
     linter: &Linter,
@@ -296,24 +294,11 @@ fn lint_content(
         .parse()
         .map_err(|e: miette::Error| io::Error::other(e.to_string()))?;
 
-    let mut items: Vec<ReportItem> = linter
-        .run(&doc, content, config)
+    let items = mq_content_lint::report_item::lint(&doc, content, linter, config).map_err(io::Error::other)?;
+    Ok(items
         .into_iter()
-        .filter(|d| d.severity >= min_severity)
-        .map(ReportItem::from)
-        .collect();
-
-    let custom_diagnostics =
-        mq_content_lint::custom_rules::run(&config.custom_rules, &doc).map_err(io::Error::other)?;
-    items.extend(
-        custom_diagnostics
-            .into_iter()
-            .filter(|d| d.severity >= min_severity)
-            .map(ReportItem::from),
-    );
-
-    items.sort_by_key(|item| item.range().map(|r| (r.start_line, r.start_column)));
-    Ok(items)
+        .filter(|item| item.severity() >= min_severity)
+        .collect())
 }
 
 /// Applies every diagnostic with a fix (built-in or custom-rule) to `content` in a single pass,
@@ -323,15 +308,8 @@ fn fix_source(content: &str, linter: &Linter, config: &LintConfig) -> io::Result
         .parse()
         .map_err(|e: miette::Error| io::Error::other(e.to_string()))?;
 
-    let mut fixes: Vec<mq_content_lint::Fix> = linter
-        .run(&doc, content, config)
-        .into_iter()
-        .filter_map(|d| d.fix)
-        .collect();
-
-    let custom_diagnostics =
-        mq_content_lint::custom_rules::run(&config.custom_rules, &doc).map_err(io::Error::other)?;
-    fixes.extend(custom_diagnostics.into_iter().filter_map(|d| d.fix));
+    let items = mq_content_lint::report_item::lint(&doc, content, linter, config).map_err(io::Error::other)?;
+    let fixes: Vec<mq_content_lint::Fix> = items.into_iter().filter_map(|item| item.fix().cloned()).collect();
 
     let fix_count = fixes.len();
     Ok((mq_content_lint::fix::apply_fixes(content, &fixes), fix_count))
