@@ -88,6 +88,16 @@ pub trait Rule: Send + Sync {
     fn option_keys(&self) -> &'static [&'static str] {
         &[]
     }
+
+    /// Whether this rule ever populates a diagnostic's [`crate::Fix`] (not necessarily every
+    /// time it fires — see [`crate::Diagnostic::fix`]). Defaults to `true`, the more common case;
+    /// override with `false` for a rule that can only report (see any rule file with no
+    /// `.with_fix(...)` call in its `check()` for examples). Purely descriptive — backs
+    /// `--list-rules`/`--explain` and has no effect on `--fix`'s own behavior, which already
+    /// only applies whatever `Fix`es individual diagnostics happen to carry.
+    fn fixable(&self) -> bool {
+        true
+    }
 }
 
 /// Returns the full built-in rule set, in a stable order matching [`RuleId::ALL`].

@@ -79,6 +79,10 @@ impl Rule for MissingFrontMatterKey {
         Severity::Error
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         if config.required_front_matter_keys.is_empty() {
             return Vec::new();

@@ -28,6 +28,10 @@ impl Rule for NoInlineHtml {
         Severity::Warning
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         let allowed = config
             .rule_options(self.id())

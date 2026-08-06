@@ -19,6 +19,10 @@ impl Rule for CodeBlockStyle {
         Severity::Warning
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         let configured = config.rule_options(self.id()).get_str("style").map(str::to_string);
         let mut expected: Option<bool> = configured.as_deref().map(|s| s == "fenced");

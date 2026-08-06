@@ -26,6 +26,10 @@ impl Rule for NoBlanksBlockquote {
         Severity::Warning
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, _doc: &mq_markdown::Markdown, source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         let lines: Vec<&str> = source.lines().collect();
         let mut diagnostics = Vec::new();

@@ -19,6 +19,10 @@ impl Rule for NoDuplicateHeading {
         Severity::Warning
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         let mut headings: Vec<(String, Option<mq_markdown::Position>)> = Vec::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {

@@ -20,6 +20,10 @@ impl Rule for TableColumnCount {
         Severity::Warning
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         // Group consecutive table cells into per-table blocks, since a document can contain
         // more than one table and each restarts its own row numbering at 0.

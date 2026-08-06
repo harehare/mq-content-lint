@@ -17,6 +17,10 @@ impl Rule for SingleH1 {
         Severity::Warning
     }
 
+    fn fixable(&self) -> bool {
+        false
+    }
+
     fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
         let mut h1s: Vec<Option<mq_markdown::Position>> = Vec::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
