@@ -401,6 +401,60 @@ runs with that single node as input, and its result (stringified) replaces the n
 under `--fix`/`--diff` — the same mechanism a built-in rule's fix uses. Omit `fix` for a
 report-only rule.
 
+### Multi-line queries
+
+`query`/`fix` are plain TOML strings, so a query too long or complex for one line can use TOML's
+triple-quoted syntax — mq doesn't treat newlines as meaningful, so this is purely a readability
+choice:
+
+```toml
+[[custom_rules]]
+id = "no_todo"
+query = '''
+select(
+  contains(to_text(), "TODO")
+)
+'''
+message = "found a TODO marker"
+```
+
+### Document-wide rules
+
+By default, `query` runs once per top-level node — fine for "does this node match a pattern," but
+not for a check that depends on the whole document (how many of something there are, whether two
+distant headings collide). Start the query with mq's `nodes` keyword to gather every top-level
+node into one array first, then the rest of the pipeline runs once against that array instead of
+once per node:
+
+```toml
+[[custom_rules]]
+id = "no_multiple_h1"
+query = '''
+nodes
+| let h1_count = len(compact(.h1))
+| if (gt(h1_count, 1)):
+    .h1
+  end
+'''
+message = "more than one top-level heading in this document"
+severity = "error"
+```
+
+This flags every `h1` in the document, but only when there's more than one — the same check the
+`single_h1` built-in makes, expressible as a custom rule because it needs to see every heading at
+once to count them. Two things that trip people up the first time:
+
+- A bare selector like `.h1` applied to the whole-document array (i.e. after `nodes`) is a *map*,
+  not a *filter* — it keeps the array's length, replacing each non-matching element with `none`
+  rather than dropping it. `len(.h1)` therefore counts every top-level node, not just the
+  matching ones; wrap it in `compact()` first (`len(compact(.h1))`) to drop the `none`s and get
+  the real count. mq-content-lint's own per-node mode doesn't have this gotcha — it relies on
+  exactly this same "non-matches become `none`" behavior to mean "no diagnostic here," which is
+  invisible until you try to `len()` the result yourself.
+- `nodes` is only valid once, as the very first step of the top-level pipeline — not nested inside
+  a `let`, an `if`, or a function call's arguments (a second `nodes` there is a syntax error, not a
+  second whole-document view).
+
 ## Non-goals
 
 - **Natural-language spelling/style checking** (a Vale-style prose linter) is out of scope.
