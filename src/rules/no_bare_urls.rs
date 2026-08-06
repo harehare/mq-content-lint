@@ -15,13 +15,18 @@ use crate::{Diagnostic, Fix, LintConfig, LintMessage, Range, RuleId, Severity};
 
 pub(crate) struct NoBareUrls;
 
+const HTTP_PREFIX: &[char] = &['h', 't', 't', 'p', ':', '/', '/'];
+const HTTPS_PREFIX: &[char] = &['h', 't', 't', 'p', 's', ':', '/', '/'];
+
 fn find_urls(line: &str) -> Vec<(usize, usize)> {
     let chars: Vec<char> = line.chars().collect();
     let mut result = Vec::new();
     let mut i = 0;
     while i < chars.len() {
-        let rest: String = chars[i..].iter().collect();
-        if !rest.starts_with("http://") && !rest.starts_with("https://") {
+        // Slice-based prefix checks instead of collecting `chars[i..]` into a new `String` on
+        // every position — the latter is O(remaining line length) per position, making a single
+        // line's scan O(length²) overall.
+        if !chars[i..].starts_with(HTTP_PREFIX) && !chars[i..].starts_with(HTTPS_PREFIX) {
             i += 1;
             continue;
         }

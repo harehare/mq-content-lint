@@ -5,6 +5,7 @@
 //! replacement string computed at check time instead of a deferred, source-resolved expression.
 
 use crate::Range;
+use crate::text::LineByteIndex;
 
 /// A machine-applicable rewrite: replace the source spanned by `range` with `replacement`. A
 /// zero-width `range` (see [`Range::at`]) is a pure insertion.
@@ -23,42 +24,21 @@ impl Fix {
     }
 }
 
-/// Converts a 1-based line/column position (column counted in `char`s) into a byte offset into
-/// `source`.
-fn position_to_byte_offset(source: &str, line: usize, column: usize) -> Option<usize> {
-    let mut offset = 0;
-    let mut lines = source.split_inclusive('\n');
-
-    for _ in 1..line {
-        offset += lines.next()?.len();
-    }
-    let line_text = lines.next().unwrap_or("");
-
-    let mut col = 1;
-    for (i, _) in line_text.char_indices() {
-        if col == column {
-            return Some(offset + i);
-        }
-        col += 1;
-    }
-    if col == column {
-        return Some(offset + line_text.trim_end_matches('\n').len());
-    }
-
-    None
-}
-
-fn range_to_byte_span(source: &str, range: Range) -> Option<(usize, usize)> {
-    let start = position_to_byte_offset(source, range.start_line, range.start_column)?;
-    let end = position_to_byte_offset(source, range.end_line, range.end_column)?;
+fn range_to_byte_span(index: &LineByteIndex, range: Range) -> Option<(usize, usize)> {
+    let start = index.byte_offset(range.start_line, range.start_column)?;
+    let end = index.byte_offset(range.end_line, range.end_column)?;
     (start <= end).then_some((start, end))
 }
 
 /// Extracts the substring of `source` spanned by `range`. Used by rules that need to inspect a
 /// node's exact raw syntax (e.g. distinguishing `[text][]` from `[text]`), not just its parsed
 /// value.
-pub(crate) fn slice(source: &str, range: Range) -> Option<&str> {
-    let (start, end) = range_to_byte_span(source, range)?;
+///
+/// `index` must have been built from the same `source` — a rule calling this once per matching
+/// node builds one `LineByteIndex` before its node loop and passes it to every call, rather than
+/// letting each call rescan the document from the start (see [`LineByteIndex`]'s docs).
+pub(crate) fn slice<'a>(source: &'a str, index: &LineByteIndex, range: Range) -> Option<&'a str> {
+    let (start, end) = range_to_byte_span(index, range)?;
     source.get(start..end)
 }
 
@@ -70,10 +50,11 @@ pub(crate) fn slice(source: &str, range: Range) -> Option<&str> {
 /// — the same policy as `mq-lint`, which in practice mostly matters for same-start overlaps
 /// (where the first one supplied wins, since the sort is stable).
 pub fn apply_fixes(source: &str, fixes: &[Fix]) -> String {
+    let index = LineByteIndex::new(source);
     let mut spans: Vec<(usize, usize, &str)> = fixes
         .iter()
         .filter_map(|fix| {
-            range_to_byte_span(source, fix.range).map(|(start, end)| (start, end, fix.replacement.as_str()))
+            range_to_byte_span(&index, fix.range).map(|(start, end)| (start, end, fix.replacement.as_str()))
         })
         .collect();
     spans.sort_by_key(|(start, ..)| std::cmp::Reverse(*start));

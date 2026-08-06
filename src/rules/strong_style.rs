@@ -33,13 +33,14 @@ impl Rule for StrongStyle {
             .and_then(configured_marker);
         let mut diagnostics = Vec::new();
 
+        let byte_index = crate::text::LineByteIndex::new(source);
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Strong(_) = node else { return };
             let Some(position) = node.position() else { return };
             if position.start.line != position.end.line {
                 return;
             }
-            let Some(raw) = crate::fix::slice(source, position.clone().into()) else {
+            let Some(raw) = crate::fix::slice(source, &byte_index, position.clone().into()) else {
                 return;
             };
             if raw.len() < 4 {
