@@ -34,6 +34,12 @@ cat README.md | mq-content-lint
 # Rewrite files in place, applying every diagnostic with a machine-applicable fix
 mq-content-lint --fix docs/
 
+# Preview what --fix would change, as a unified diff, without writing anything
+mq-content-lint --diff docs/
+
+# Re-lint automatically whenever a watched file changes (Ctrl+C to stop)
+mq-content-lint --watch docs/
+
 # Machine-readable output
 mq-content-lint --format json docs/ > report.json
 mq-content-lint --format sarif docs/ > report.sarif
@@ -58,7 +64,22 @@ exposes a new issue (or a rule whose fix would have overlapped another rule's fi
 span) needs a second `--fix` run to pick up. Rules where there's no single unambiguous rewrite —
 no reasonable default alt text, no way to invent required front matter content, an ordered-list
 prefix bug that could mean either "insert here" or "renumber" — never populate a fix; see the
-"Fix?" column below.
+"Fix?" column below. A [custom rule](#custom-rules) is fixable too, if it's configured with a
+`fix` expression.
+
+Not sure what `--fix` would do before it does it? `--diff` computes the exact same fixes but never
+writes — files (and stdin's fixed content) stay untouched, and a unified diff is printed to stdout
+instead. It works standalone (no need to pass `--fix` too) and exits non-zero if anything would
+change, so `mq-content-lint --diff docs/` doubles as a CI check for "is everything already
+formatted."
+
+### Watch mode
+
+`--watch` runs an initial pass and then keeps running, re-linting whenever a watched file changes,
+until interrupted (Ctrl+C). It requires at least one file/directory argument (there's no sense
+watching stdin) and combines with `--fix`/`--diff` to re-fix or re-preview on every save. A
+directory argument is watched recursively, so `.md`/`.markdown` files created after the watch
+starts are picked up too.
 
 ### GitHub Actions
 
@@ -78,6 +99,17 @@ prefix bug that could mean either "insert here" or "renumber" — never populate
 Drop a `mq-content-lint.toml` file in (or above) the directory you run `mq-content-lint` from —
 it's discovered automatically, the same way `.eslintrc`/`pyproject.toml` are, by walking up from
 the current directory. Pass `--config path/to/file.toml` to use an explicit path instead.
+
+Config files **cascade** like ESLint's: every `mq-content-lint.toml` found from the current
+directory up to the filesystem root is loaded, not just the nearest one. They're layered
+farthest-first, so a closer file's `[rules]` entries win over the same key from a farther one —
+put shared defaults at a monorepo's root and narrow them per-package. `front_matter.required_keys`
+is inherited from the nearest ancestor that sets any (an empty/unset one in a closer file doesn't
+clear an inherited value); `custom_rules` accumulate across every level instead of overriding,
+since they're typically additive checks rather than competing settings.
+
+A rule-specific key inside `[rules.<id>]` is validated against that rule's known options — a typo
+like `[rules.line_length] limt = 100` is a config error at load time, not a silently-ignored key.
 
 ```toml
 [rules]
@@ -225,14 +257,20 @@ document with `mq-lang`; every node it selects becomes a diagnostic at that node
 id = "no_todo"
 query = 'select(contains(to_text(), "TODO"))'
 message = "found a TODO marker"
-severity = "warning"  # optional, defaults to "warning"
+severity = "warning"              # optional, defaults to "warning"
+fix = 'replace("TODO", "DONE")'   # optional — see below
 ```
 
 Custom rules run alongside the built-ins and are merged into the same report, sorted by position.
-They don't currently support `--fix` — a custom rule only reports, it doesn't rewrite. Their
-`ruleId` is whatever `id` you configure (not one of the built-in ids below), their `selector`
-field in JSON output is always `null`, and an invalid query is a hard error at lint time (not a
-silently-empty result), so a typo in a query fails loudly rather than passing CI by accident.
+Their `ruleId` is whatever `id` you configure (not one of the built-in ids below), their
+`selector` field in JSON output is always `null`, and an invalid query is a hard error at lint
+time (not a silently-empty result), so a typo in a query fails loudly rather than passing CI by
+accident.
+
+An optional `fix` expression makes a custom rule autofixable: for each node `query` matches, `fix`
+runs with that single node as input, and its result (stringified) replaces the node's full span
+under `--fix`/`--diff` — the same mechanism a built-in rule's fix uses. Omit `fix` for a
+report-only rule.
 
 ## Non-goals
 
