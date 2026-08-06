@@ -1,5 +1,6 @@
 mod format;
 mod report_item;
+mod watch;
 
 use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
@@ -45,9 +46,23 @@ struct Cli {
     #[arg(long)]
     fix: bool,
 
+    /// Preview what --fix would change, as a unified diff, without writing anything (files stay
+    /// untouched; stdin's fixed content is not printed). Implies computing fixes on its own, so
+    /// it doesn't need --fix too. Exits non-zero if any file would change, like `--fix` exits
+    /// non-zero on remaining diagnostics.
+    #[arg(long)]
+    diff: bool,
+
     /// Diagnostic output format
     #[arg(long, value_enum, default_value_t)]
     format: OutputFormat,
+
+    /// Re-run after any change to a watched file (or a `.md`/`.markdown` file created under a
+    /// watched directory), printing a fresh report each time instead of exiting. Combine with
+    /// `--fix` to re-fix on save. Requires at least one file/directory argument — there's no
+    /// sense watching stdin. Runs until interrupted (Ctrl+C).
+    #[arg(long)]
+    watch: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -104,11 +119,24 @@ fn run() -> io::Result<bool> {
     let linter = Linter::with_default_rules();
 
     if cli.files.is_empty() {
+        if cli.watch {
+            return Err(io::Error::other(
+                "--watch requires at least one file or directory argument",
+            ));
+        }
+
         let mut content = String::new();
         io::stdin().read_to_string(&mut content)?;
 
-        if cli.fix {
+        if cli.fix || cli.diff {
             let (fixed, _) = fix_source(&content, &linter, &config)?;
+            if cli.diff {
+                let changed = fixed != content;
+                if changed {
+                    write!(w, "{}", compute_diff("<stdin>", &content, &fixed))?;
+                }
+                return Ok(changed);
+            }
             write!(w, "{fixed}")?;
             return Ok(false);
         }
@@ -119,6 +147,23 @@ fn run() -> io::Result<bool> {
         return Ok(had_diagnostics);
     }
 
+    if cli.watch {
+        return watch::run(&cli, &config, &linter, min_severity, &mut w);
+    }
+
+    lint_files(&cli, &config, &linter, min_severity, &mut w)
+}
+
+/// Resolves `cli.files` to concrete Markdown files, lints (and optionally fixes/diffs) them in
+/// parallel, and writes the report. Re-walks `cli.files` on every call rather than caching the
+/// resolved list, so [`watch::run`] picks up files created or deleted between runs.
+fn lint_files(
+    cli: &Cli,
+    config: &LintConfig,
+    linter: &Linter,
+    min_severity: Severity,
+    w: &mut impl Write,
+) -> io::Result<bool> {
     let mut paths = Vec::new();
     for arg in &cli.files {
         collect_markdown_files(arg, &mut paths)?;
@@ -130,11 +175,23 @@ fn run() -> io::Result<bool> {
     // no shared mutable state), so it parallelizes cleanly across files with rayon.
     // `par_iter().map(..).collect()` preserves `paths`' order in the output regardless of which
     // thread finishes first, so output stays deterministic; anything that writes to `w` (the
-    // "fixed N issues" notices) is deferred to a sequential pass afterward for the same reason.
+    // "fixed N issues" notices, diffs) is deferred to a sequential pass afterward for the same
+    // reason.
     let outcomes: Vec<FileOutcome> = paths
         .par_iter()
-        .map(|path| -> io::Result<FileOutcome> { process_file(path, &linter, &config, min_severity, cli.fix) })
+        .map(|path| -> io::Result<FileOutcome> { process_file(path, linter, config, min_severity, cli.fix, cli.diff) })
         .collect::<io::Result<Vec<_>>>()?;
+
+    if cli.diff {
+        let mut any_diff = false;
+        for outcome in &outcomes {
+            if let Some(diff_text) = &outcome.diff {
+                any_diff = true;
+                write!(w, "{diff_text}")?;
+            }
+        }
+        return Ok(any_diff);
+    }
 
     for outcome in &outcomes {
         if let Some(fix_count) = outcome.fix_count {
@@ -154,45 +211,56 @@ fn run() -> io::Result<bool> {
 
     let had_diagnostics = outcomes.iter().any(|o| !o.diagnostics.is_empty());
     let results: Vec<(String, Vec<ReportItem>)> = outcomes.into_iter().map(|o| (o.label, o.diagnostics)).collect();
-    format::write_report(&mut w, cli.format, &results)?;
+    format::write_report(w, cli.format, &results)?;
 
     Ok(had_diagnostics)
 }
 
-/// One file's outcome from [`process_file`]: its diagnostics, and — when `--fix` changed it —
-/// how many fixes were applied, for the sequential "fixed N issues in ..." notice.
+/// One file's outcome from [`process_file`]: its diagnostics; when `--fix` changed it, how many
+/// fixes were applied (for the sequential "fixed N issues in ..." notice); when `--diff` would
+/// have changed it, the unified diff text (for the sequential diff printout). At most one of
+/// `fix_count`/`diff` is ever set, since `--fix` and `--diff` don't write in the same run.
 struct FileOutcome {
     label: String,
     diagnostics: Vec<ReportItem>,
     fix_count: Option<usize>,
+    diff: Option<String>,
 }
 
-/// Reads, optionally fixes (writing the result back to disk if changed), and lints a single
-/// file. Pure I/O plus computation with no access to shared state, so callers can run this
-/// across a rayon `par_iter()` safely.
+/// Reads, optionally fixes, and lints a single file. Pure I/O plus computation with no access to
+/// shared state, so callers can run this across a rayon `par_iter()` safely.
+///
+/// `fix` rewrites the file in place when changed. `diff` computes the same fix but never writes
+/// — it captures a unified diff instead, and linting proceeds against the file's original
+/// (unwritten) content, matching what's actually on disk. If both are set, `diff` wins (no
+/// write); `--fix --diff` is accepted but behaves like `--diff` alone.
 fn process_file(
     path: &Path,
     linter: &Linter,
     config: &LintConfig,
     min_severity: Severity,
     fix: bool,
+    diff: bool,
 ) -> io::Result<FileOutcome> {
-    let content = std::fs::read_to_string(path)
+    let original = std::fs::read_to_string(path)
         .map_err(|e| io::Error::other(format!("reading file {}: {}", path.display(), e)))?;
     let label = path.display().to_string();
 
-    let (content, fix_count) = if fix {
-        let (fixed, fix_count) = fix_source(&content, linter, config)
+    let (content, fix_count, file_diff) = if fix || diff {
+        let (fixed, count) = fix_source(&original, linter, config)
             .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
-        if fixed != content {
+        if fixed == original {
+            (original, None, None)
+        } else if diff {
+            let diff_text = compute_diff(&label, &original, &fixed);
+            (original, None, Some(diff_text))
+        } else {
             std::fs::write(path, &fixed)
                 .map_err(|e| io::Error::other(format!("writing file {}: {}", path.display(), e)))?;
-            (fixed, Some(fix_count))
-        } else {
-            (fixed, None)
+            (fixed, Some(count), None)
         }
     } else {
-        (content, None)
+        (original, None, None)
     };
 
     let diagnostics = lint_content(&content, linter, config, min_severity)
@@ -202,7 +270,17 @@ fn process_file(
         label,
         diagnostics,
         fix_count,
+        diff: file_diff,
     })
+}
+
+/// A unified diff between `old` and `new`, headered with `label` (`a/<label>` / `b/<label>`,
+/// like `git diff`'s default headers).
+fn compute_diff(label: &str, old: &str, new: &str) -> String {
+    let diff = similar::TextDiff::from_lines(old, new);
+    diff.unified_diff()
+        .header(&format!("a/{label}"), &format!("b/{label}"))
+        .to_string()
 }
 
 /// Parses `content` as Markdown and returns built-in plus custom-rule diagnostics at or above
@@ -238,17 +316,23 @@ fn lint_content(
     Ok(items)
 }
 
-/// Applies every diagnostic with a fix to `content` in a single pass, returning the rewritten
-/// text and how many fixes were applied.
+/// Applies every diagnostic with a fix (built-in or custom-rule) to `content` in a single pass,
+/// returning the rewritten text and how many fixes were applied.
 fn fix_source(content: &str, linter: &Linter, config: &LintConfig) -> io::Result<(String, usize)> {
     let doc: mq_markdown::Markdown = content
         .parse()
         .map_err(|e: miette::Error| io::Error::other(e.to_string()))?;
-    let fixes: Vec<mq_content_lint::Fix> = linter
+
+    let mut fixes: Vec<mq_content_lint::Fix> = linter
         .run(&doc, content, config)
         .into_iter()
         .filter_map(|d| d.fix)
         .collect();
+
+    let custom_diagnostics =
+        mq_content_lint::custom_rules::run(&config.custom_rules, &doc).map_err(io::Error::other)?;
+    fixes.extend(custom_diagnostics.into_iter().filter_map(|d| d.fix));
+
     let fix_count = fixes.len();
     Ok((mq_content_lint::fix::apply_fixes(content, &fixes), fix_count))
 }
@@ -360,6 +444,14 @@ mod tests {
         assert!(!cli.fix);
     }
 
+    #[test]
+    fn test_cli_diff_flag() {
+        let cli = Cli::try_parse_from(["mq-content-lint", "--diff", "test.md"]).unwrap();
+        assert!(cli.diff);
+        let cli = Cli::try_parse_from(["mq-content-lint", "test.md"]).unwrap();
+        assert!(!cli.diff);
+    }
+
     #[rstest]
     #[case(vec!["mq-content-lint"], OutputFormat::Text)]
     #[case(vec!["mq-content-lint", "--format", "text"], OutputFormat::Text)]
@@ -396,12 +488,77 @@ mod tests {
     }
 
     #[test]
+    fn test_fix_source_applies_a_custom_rule_fix() {
+        let linter = Linter::with_default_rules();
+        let config = LintConfig::from_toml_str(
+            r#"
+            [[custom_rules]]
+            id = "no_todo"
+            query = 'select(contains(to_text(), "TODO"))'
+            message = "found a TODO marker"
+            fix = 'replace("TODO", "DONE")'
+            "#,
+        )
+        .unwrap();
+        let (fixed, count) = fix_source("TODO: fix this\n", &linter, &config).unwrap();
+        assert_eq!(fixed, "DONE: fix this\n");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
     fn test_fix_source_is_a_noop_when_nothing_is_fixable() {
         let linter = Linter::with_default_rules();
         let config = LintConfig::default();
         let (fixed, count) = fix_source("# Title\n", &linter, &config).unwrap();
         assert_eq!(fixed, "# Title\n");
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_compute_diff_shows_a_unified_diff() {
+        let diff = compute_diff("test.md", "#Title\n", "# Title\n");
+        assert!(diff.contains("--- a/test.md"));
+        assert!(diff.contains("+++ b/test.md"));
+        assert!(diff.contains("-#Title"));
+        assert!(diff.contains("+# Title"));
+    }
+
+    #[test]
+    fn test_process_file_diff_mode_does_not_write_the_file() {
+        let dir = std::env::temp_dir().join(format!("mq-content-lint-diff-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test.md");
+        std::fs::write(&path, "#Title\n").unwrap();
+
+        let linter = Linter::with_default_rules();
+        let config = LintConfig::default();
+        let outcome = process_file(&path, &linter, &config, Severity::Info, false, true).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "#Title\n",
+            "file must stay untouched"
+        );
+        assert!(outcome.diff.is_some());
+        assert!(outcome.fix_count.is_none());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_process_file_diff_mode_is_a_noop_when_nothing_is_fixable() {
+        let dir = std::env::temp_dir().join(format!("mq-content-lint-diff-noop-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test.md");
+        std::fs::write(&path, "# Title\n").unwrap();
+
+        let linter = Linter::with_default_rules();
+        let config = LintConfig::default();
+        let outcome = process_file(&path, &linter, &config, Severity::Info, false, true).unwrap();
+
+        assert!(outcome.diff.is_none());
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -23,6 +23,7 @@
 //!     query: r#"select(.image.alt == "")"#.to_string(),
 //!     message: "image alt text is empty".to_string(),
 //!     severity: Severity::Warning,
+//!     fix: None,
 //! }];
 //!
 //! let diagnostics = custom_rules::run(&rules, &doc).unwrap();
@@ -31,7 +32,7 @@
 
 use serde::Deserialize;
 
-use crate::{Range, Severity};
+use crate::{Fix, Range, Severity};
 
 fn default_severity() -> Severity {
     Severity::Warning
@@ -54,6 +55,13 @@ pub struct CustomRule {
     pub message: String,
     #[serde(default = "default_severity")]
     pub severity: Severity,
+    /// An optional mq expression that, run with a single matched node as its input, produces the
+    /// text `--fix` should replace that node's full span with (via [`ToString`]/`Display`, so a
+    /// query returning a string or a markdown node both work). Omit for a report-only rule —
+    /// there's no requirement that a custom rule be fixable. See [`crate::fix`] for how a `Fix`
+    /// is applied.
+    #[serde(default)]
+    pub fix: Option<String>,
 }
 
 /// A finding from a [`CustomRule`].
@@ -63,6 +71,7 @@ pub struct CustomDiagnostic {
     pub message: String,
     pub severity: Severity,
     pub range: Option<Range>,
+    pub fix: Option<Fix>,
 }
 
 /// Error evaluating a custom rule's query — most commonly a syntax mistake in hand-written mq.
@@ -98,11 +107,18 @@ pub fn run(rules: &[CustomRule], doc: &mq_markdown::Markdown) -> Result<Vec<Cust
             if let mq_lang::RuntimeValue::Markdown(node, _) = value
                 && let Some(position) = node.position()
             {
+                let range: Range = position.into();
+                let fix = rule
+                    .fix
+                    .as_deref()
+                    .map(|fix_query| eval_fix(rule, fix_query, &node, range))
+                    .transpose()?;
                 diagnostics.push(CustomDiagnostic {
                     rule_id: rule.id.clone(),
                     message: rule.message.clone(),
                     severity: rule.severity,
-                    range: Some(position.into()),
+                    range: Some(range),
+                    fix,
                 });
             }
         }
@@ -110,6 +126,28 @@ pub fn run(rules: &[CustomRule], doc: &mq_markdown::Markdown) -> Result<Vec<Cust
 
     diagnostics.sort_by_key(|d| d.range.map(|r| (r.start_line, r.start_column)));
     Ok(diagnostics)
+}
+
+/// Evaluates `fix_query` with `node` as its sole input, producing a [`Fix`] that replaces
+/// `node`'s full span with the query's result (stringified via `Display` — see [`CustomRule::fix`]).
+fn eval_fix(
+    rule: &CustomRule,
+    fix_query: &str,
+    node: &mq_markdown::Node,
+    range: Range,
+) -> Result<Fix, CustomRuleError> {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+
+    let result = engine
+        .eval(fix_query, std::iter::once(mq_lang::RuntimeValue::from(node.clone())))
+        .map_err(|e| CustomRuleError {
+            rule_id: rule.id.clone(),
+            reason: format!("fix: {e}"),
+        })?;
+
+    let replacement: String = result.compact().iter().map(ToString::to_string).collect();
+    Ok(Fix::new(range, replacement))
 }
 
 #[cfg(test)]
@@ -122,6 +160,7 @@ mod tests {
             query: query.to_string(),
             message: "matched".to_string(),
             severity: Severity::Warning,
+            fix: None,
         }
     }
 
@@ -158,6 +197,37 @@ mod tests {
         r.severity = Severity::Error;
         let diagnostics = run(&[r], &doc).unwrap();
         assert_eq!(diagnostics[0].severity, Severity::Error);
+    }
+
+    #[test]
+    fn fix_query_produces_a_replacement_for_the_matched_node() {
+        let doc: mq_markdown::Markdown = "TODO: fix this\n".parse().unwrap();
+        let mut r = rule(r#"select(contains(to_text(), "TODO"))"#);
+        r.fix = Some(r#"replace("TODO", "DONE")"#.to_string());
+        let diagnostics = run(&[r], &doc).unwrap();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].fix.as_ref().unwrap().replacement, "DONE: fix this");
+        assert_eq!(
+            diagnostics[0].fix.as_ref().unwrap().range,
+            diagnostics[0].range.unwrap()
+        );
+    }
+
+    #[test]
+    fn no_fix_query_means_no_fix() {
+        let doc: mq_markdown::Markdown = "# Title\n".parse().unwrap();
+        let diagnostics = run(&[rule(".h")], &doc).unwrap();
+        assert!(diagnostics[0].fix.is_none());
+    }
+
+    #[test]
+    fn an_invalid_fix_query_is_a_reported_error() {
+        let doc: mq_markdown::Markdown = "# Title\n".parse().unwrap();
+        let mut r = rule(".h");
+        r.fix = Some("this is not valid mq (((".to_string());
+        let result = run(&[r], &doc);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().rule_id, "test_rule");
     }
 
     #[test]
