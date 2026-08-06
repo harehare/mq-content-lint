@@ -78,6 +78,16 @@ pub trait Rule: Send + Sync {
     /// any configured override afterwards, so rules don't need to consult `config` for severity
     /// themselves.
     fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic>;
+
+    /// Rule-specific keys this rule reads from its `[rules.<id>]` config table via
+    /// [`crate::config::RuleOptions`]'s `get_*` accessors (besides the universal `enabled`/
+    /// `severity`, which every rule gets for free and never appear here). Config loading checks
+    /// every key actually present in a rule's table against this list and rejects an unknown one
+    /// as a typo (e.g. `limt` instead of `limit`) rather than silently ignoring it. Empty by
+    /// default, for the many rules with no options at all.
+    fn option_keys(&self) -> &'static [&'static str] {
+        &[]
+    }
 }
 
 /// Returns the full built-in rule set, in a stable order matching [`RuleId::ALL`].

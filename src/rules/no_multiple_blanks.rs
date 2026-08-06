@@ -58,6 +58,10 @@ impl Rule for NoMultipleBlanks {
         }
         diagnostics
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["maximum"]
+    }
 }
 
 #[cfg(test)]

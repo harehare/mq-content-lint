@@ -72,6 +72,10 @@ impl Rule for EmphasisStyle {
         });
         diagnostics
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["style"]
+    }
 }
 
 #[cfg(test)]

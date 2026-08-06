@@ -49,6 +49,10 @@ impl Rule for NoInlineHtml {
         });
         diagnostics
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["allowed"]
+    }
 }
 
 #[cfg(test)]

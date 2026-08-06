@@ -50,6 +50,10 @@ impl Rule for DescriptiveLinkText {
         });
         diagnostics
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["forbidden"]
+    }
 }
 
 #[cfg(test)]

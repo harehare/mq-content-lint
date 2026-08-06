@@ -41,6 +41,10 @@ impl Rule for NoTrailingSpaces {
             })
             .collect()
     }
+
+    fn option_keys(&self) -> &'static [&'static str] {
+        &["br_spaces"]
+    }
 }
 
 #[cfg(test)]

@@ -65,6 +65,15 @@ impl RuleOptions {
             .as_array()
             .map(|values| values.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
     }
+
+    /// Keys present in this table that aren't in `known` — used at config-load time to reject a
+    /// typo'd option key rather than silently ignoring it. See [`crate::rules::Rule::option_keys`].
+    fn unknown_keys<'a>(&'a self, known: &'a [&'static str]) -> impl Iterator<Item = &'a str> {
+        self.extra
+            .keys()
+            .map(String::as_str)
+            .filter(move |k| !known.contains(k))
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -102,6 +111,8 @@ pub enum ConfigError {
     },
     #[error("{path}: unknown rule `{rule}` in [rules] table")]
     UnknownRule { path: PathBuf, rule: String },
+    #[error("{path}: unknown option `{key}` for rule `{rule}` in [rules.{rule}] table")]
+    UnknownRuleOption { path: PathBuf, rule: String, key: String },
 }
 
 /// Resolved linter configuration.
@@ -130,12 +141,27 @@ impl LintConfig {
             source: Box::new(source),
         })?;
 
+        let known_rules = crate::rules::all_rules();
         let mut rules = HashMap::with_capacity(file.rules.len());
         for (name, setting) in file.rules {
             let rule_id = name.parse::<RuleId>().map_err(|_| ConfigError::UnknownRule {
                 path: path.to_path_buf(),
                 rule: name,
             })?;
+            if let RuleSetting::Options(options) = &setting {
+                let known_keys = known_rules
+                    .iter()
+                    .find(|rule| rule.id() == rule_id)
+                    .map(|rule| rule.option_keys())
+                    .unwrap_or(&[]);
+                if let Some(key) = options.unknown_keys(known_keys).next() {
+                    return Err(ConfigError::UnknownRuleOption {
+                        path: path.to_path_buf(),
+                        rule: rule_id.as_str().to_string(),
+                        key: key.to_string(),
+                    });
+                }
+            }
             rules.insert(rule_id, setting);
         }
 
@@ -155,19 +181,51 @@ impl LintConfig {
         Self::from_toml_str_at(&content, path)
     }
 
-    /// Walks up from `start_dir` looking for [`CONFIG_FILE_NAME`], loading the first one found.
-    /// Returns the default config (equivalent to no config file) if none is found before
-    /// reaching the filesystem root.
+    /// Walks up from `start_dir` collecting every ancestor directory's [`CONFIG_FILE_NAME`], then
+    /// cascades them from the outermost (nearest the filesystem root) down to the innermost
+    /// (`start_dir` itself) — similar to ESLint's config cascading, so a monorepo can put shared
+    /// defaults at the root and narrow them per-package:
+    /// - `[rules]` entries merge key by key; a closer file's entry for the same rule wins.
+    /// - `front_matter.required_keys` is inherited from the nearest ancestor that sets any (a
+    ///   closer file with an empty/absent `required_keys` doesn't clear an inherited one — there
+    ///   is no way to distinguish "not set" from "explicitly emptied" once parsed, so this
+    ///   crate picks the more useful reading).
+    /// - `custom_rules` accumulate across every level rather than overriding — they're typically
+    ///   additive checks (a root-level house rule plus a package-specific one), not competing
+    ///   settings for the same thing.
+    ///
+    /// Returns the default config (equivalent to no config file) if none is found anywhere in
+    /// the ancestor chain.
     pub fn discover(start_dir: &Path) -> Result<Self, ConfigError> {
+        let mut candidates = Vec::new();
         let mut dir = Some(start_dir);
         while let Some(d) = dir {
             let candidate = d.join(CONFIG_FILE_NAME);
             if candidate.is_file() {
-                return Self::load_from_path(&candidate);
+                candidates.push(candidate);
             }
             dir = d.parent();
         }
-        Ok(Self::default())
+        // `candidates` is closest-first (start_dir outward); cascade outermost-first so a closer
+        // file's settings are layered on top and win.
+        candidates.reverse();
+
+        let mut merged = Self::default();
+        for path in candidates {
+            merged = merged.cascade(Self::load_from_path(&path)?);
+        }
+        Ok(merged)
+    }
+
+    /// Layers `closer`'s settings on top of `self` (which is assumed farther from the linted
+    /// file) per the rules documented on [`LintConfig::discover`].
+    fn cascade(mut self, closer: Self) -> Self {
+        self.rules.extend(closer.rules);
+        if !closer.required_front_matter_keys.is_empty() {
+            self.required_front_matter_keys = closer.required_front_matter_keys;
+        }
+        self.custom_rules.extend(closer.custom_rules);
+        self
     }
 
     /// Disables a rule, overriding whatever the config file said. Used by the CLI's `--disable`
@@ -296,6 +354,29 @@ mod tests {
     }
 
     #[test]
+    fn unknown_rule_option_key_is_a_parse_error() {
+        let result = LintConfig::from_toml_str(
+            r#"
+            [rules.line_length]
+            limt = 100
+            "#,
+        );
+        assert!(matches!(result, Err(ConfigError::UnknownRuleOption { .. })));
+    }
+
+    #[test]
+    fn known_rule_option_keys_are_accepted() {
+        let result = LintConfig::from_toml_str(
+            r#"
+            [rules.line_length]
+            limit = 100
+            code_blocks = false
+            "#,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn unknown_rule_name_is_a_parse_error() {
         let result = LintConfig::from_toml_str(
             r#"
@@ -327,6 +408,85 @@ mod tests {
         .unwrap();
         let nested = dir.join("a/b/c");
         std::fs::create_dir_all(&nested).unwrap();
+
+        let config = LintConfig::discover(&nested).unwrap();
+        assert_eq!(config.required_front_matter_keys, vec!["title"]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn discover_cascades_a_closer_rule_setting_over_a_farther_one() {
+        let dir = tempdir();
+        std::fs::write(
+            dir.join(CONFIG_FILE_NAME),
+            "[rules]\nimage_missing_alt = \"warning\"\nno_inline_html = false\n",
+        )
+        .unwrap();
+        let nested = dir.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(
+            nested.join(CONFIG_FILE_NAME),
+            "[rules]\nimage_missing_alt = \"error\"\n",
+        )
+        .unwrap();
+
+        let config = LintConfig::discover(&nested).unwrap();
+        // Overridden by the closer file.
+        assert_eq!(
+            config.severity_for(RuleId::ImageMissingAlt, Severity::Warning),
+            Severity::Error
+        );
+        // Untouched by the closer file, so the farther file's setting still applies.
+        assert!(!config.is_rule_enabled(RuleId::NoInlineHtml));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn discover_accumulates_custom_rules_from_every_level() {
+        let dir = tempdir();
+        std::fs::write(
+            dir.join(CONFIG_FILE_NAME),
+            r#"
+            [[custom_rules]]
+            id = "root_rule"
+            query = ".h"
+            message = "root"
+            "#,
+        )
+        .unwrap();
+        let nested = dir.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(
+            nested.join(CONFIG_FILE_NAME),
+            r#"
+            [[custom_rules]]
+            id = "pkg_rule"
+            query = ".image"
+            message = "pkg"
+            "#,
+        )
+        .unwrap();
+
+        let config = LintConfig::discover(&nested).unwrap();
+        let ids: Vec<&str> = config.custom_rules.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["root_rule", "pkg_rule"]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn discover_inherits_required_front_matter_keys_when_a_closer_file_does_not_set_any() {
+        let dir = tempdir();
+        std::fs::write(
+            dir.join(CONFIG_FILE_NAME),
+            "[front_matter]\nrequired_keys = [\"title\"]\n",
+        )
+        .unwrap();
+        let nested = dir.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join(CONFIG_FILE_NAME), "[rules]\nno_inline_html = false\n").unwrap();
 
         let config = LintConfig::discover(&nested).unwrap();
         assert_eq!(config.required_front_matter_keys, vec!["title"]);
