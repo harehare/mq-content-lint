@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::str::FromStr;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use colored::Colorize;
 use format::OutputFormat;
 use mq_content_lint::report_item::ReportItem;
@@ -15,7 +15,7 @@ use rayon::prelude::*;
 
 /// Static content linter for Markdown, built on mq's AST and selectors.
 #[derive(Parser)]
-#[command(name = "mq-content-lint", about = "Lint Markdown content")]
+#[command(name = "mq-content-lint", about = "Lint Markdown content", version)]
 struct Cli {
     /// Markdown files or directories to lint (reads from stdin if omitted). Directories are
     /// searched recursively for `.md`/`.markdown` files, skipping dotfiles/dotdirs.
@@ -42,6 +42,12 @@ struct Cli {
     /// mq selector, and configurable options, then exit
     #[arg(long, value_name = "RULE_ID")]
     explain: Option<RuleId>,
+
+    /// Print a shell completion script for the given shell to stdout, then exit. Install it the
+    /// way that shell expects, e.g. for bash:
+    /// `mq-content-lint --generate-completions bash > /etc/bash_completion.d/mq-content-lint`.
+    #[arg(long, value_name = "SHELL")]
+    generate_completions: Option<clap_complete::Shell>,
 
     /// Rewrite files in place, applying every diagnostic with a machine-applicable fix (reads
     /// stdin if no files are given, writing the fixed content to stdout). Re-lints and re-fixes
@@ -113,6 +119,11 @@ fn run() -> io::Result<bool> {
 
     if let Some(rule_id) = cli.explain {
         explain_rule(&mut w, rule_id)?;
+        return Ok(false);
+    }
+
+    if let Some(shell) = cli.generate_completions {
+        generate_completions(shell, &mut w)?;
         return Ok(false);
     }
 
@@ -447,6 +458,16 @@ fn is_markdown_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Prints `shell`'s completion script for this CLI to `w` (`--generate-completions <shell>`).
+/// Generated from the same [`Cli`] clap parses with, so a new flag shows up in completions for
+/// free — nothing here needs updating when the CLI's arguments change.
+fn generate_completions(shell: clap_complete::Shell, w: &mut impl Write) -> io::Result<()> {
+    let mut command = Cli::command();
+    let name = command.get_name().to_string();
+    clap_complete::generate(shell, &mut command, name, w);
+    Ok(())
+}
+
 fn list_rules(w: &mut impl Write) -> io::Result<()> {
     let mut rules = mq_content_lint::rules::all_rules();
     rules.sort_by_key(|r| r.id());
@@ -501,7 +522,7 @@ fn explain_rule(w: &mut impl Write, rule_id: RuleId) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
+    use clap::{Parser, ValueEnum};
     use rstest::rstest;
 
     #[rstest]
@@ -513,6 +534,45 @@ mod tests {
             cli.files,
             expected_files.into_iter().map(PathBuf::from).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn test_cli_version_flag_is_wired_up() {
+        // clap intercepts --version/--help before normal parsing, surfacing it as a "parse
+        // error" whose kind says which — this used to be a plain UnknownArgument error since the
+        // Cli command had no `version` attribute at all.
+        let Err(err) = Cli::try_parse_from(["mq-content-lint", "--version"]) else {
+            panic!("--version should not parse as a normal Cli");
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+    }
+
+    #[test]
+    fn test_cli_generate_completions_parses_a_shell() {
+        let cli = Cli::try_parse_from(["mq-content-lint", "--generate-completions", "zsh"]).unwrap();
+        assert_eq!(cli.generate_completions, Some(clap_complete::Shell::Zsh));
+        let cli = Cli::try_parse_from(["mq-content-lint"]).unwrap();
+        assert_eq!(cli.generate_completions, None);
+    }
+
+    #[test]
+    fn test_cli_generate_completions_rejects_an_unknown_shell() {
+        let result = Cli::try_parse_from(["mq-content-lint", "--generate-completions", "cmd.exe"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_generate_completions_writes_a_non_empty_script_for_every_supported_shell() {
+        for shell in clap_complete::Shell::value_variants() {
+            let mut out = Vec::new();
+            generate_completions(*shell, &mut out).unwrap();
+            assert!(!out.is_empty(), "{shell:?} produced no completion script");
+            let text = String::from_utf8(out).unwrap();
+            assert!(
+                text.contains("mq-content-lint"),
+                "{shell:?}'s script should reference the binary name"
+            );
+        }
     }
 
     #[test]
@@ -614,6 +674,7 @@ mod tests {
     #[case(vec!["mq-content-lint", "--format", "text"], OutputFormat::Text)]
     #[case(vec!["mq-content-lint", "--format", "json"], OutputFormat::Json)]
     #[case(vec!["mq-content-lint", "--format", "sarif"], OutputFormat::Sarif)]
+    #[case(vec!["mq-content-lint", "--format", "rdjson"], OutputFormat::Rdjson)]
     fn test_cli_format(#[case] args: Vec<&str>, #[case] expected: OutputFormat) {
         let cli = Cli::try_parse_from(args).unwrap();
         assert_eq!(cli.format, expected);

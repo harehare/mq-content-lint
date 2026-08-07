@@ -21,7 +21,7 @@ inputs:
     required: false
     default: 'false'
   format:
-    description: 'Output format: text, json, or sarif.'
+    description: 'Output format: text, json, sarif, or rdjson (for reviewdog).'
     required: false
     default: 'text'
   min-severity:
@@ -41,6 +41,11 @@ outputs:
     # always does when there are diagnostics to report, the very case a SARIF-consuming caller
     # cares about most. The filename this produces is fixed, so there's nothing to compute.
     value: ${{ inputs.format == 'sarif' && 'mq-content-lint-results.sarif' || '' }}
+  rdjson-file:
+    description: >
+      Path to the generated RDJSON report (only set when format is rdjson) — feed it to
+      `reviewdog -f=rdjson -reporter=github-pr-review` for diagnostics as inline PR comments.
+    value: ${{ inputs.format == 'rdjson' && 'mq-content-lint-results.rdjson' || '' }}
 
 runs:
   using: 'composite'
@@ -97,6 +102,8 @@ runs:
 
         if [ "$MQ_FORMAT" = "sarif" ]; then
           mq-content-lint "${args[@]}" > mq-content-lint-results.sarif
+        elif [ "$MQ_FORMAT" = "rdjson" ]; then
+          mq-content-lint "${args[@]}" > mq-content-lint-results.rdjson
         else
           mq-content-lint "${args[@]}"
         fi
