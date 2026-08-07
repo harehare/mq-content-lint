@@ -28,6 +28,9 @@ both in one go — see [Editors](#editors).
 ## Usage
 
 ```bash
+# Write a starter mq-content-lint.toml (everything commented out — see Configuration)
+mq-content-lint --init
+
 # Lint one file
 mq-content-lint README.md
 
@@ -211,6 +214,10 @@ Markdown files.
 Drop a `mq-content-lint.toml` file in (or above) the directory you run `mq-content-lint` from —
 it's discovered automatically, the same way `.eslintrc`/`pyproject.toml` are, by walking up from
 the current directory. Pass `--config path/to/file.toml` to use an explicit path instead.
+
+`mq-content-lint --init` writes a starter one in the current directory to save typing it from
+scratch — every setting in it is commented out, so it documents what's available without changing
+any rule's behavior until you uncomment something. Refuses to overwrite an existing config.
 
 Config files **cascade** like ESLint's: every `mq-content-lint.toml` found from the current
 directory up to the filesystem root is loaded, not just the nearest one. They're layered

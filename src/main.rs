@@ -9,6 +9,7 @@ use std::str::FromStr;
 use clap::{CommandFactory, Parser};
 use colored::Colorize;
 use format::OutputFormat;
+use mq_content_lint::config::CONFIG_FILE_NAME;
 use mq_content_lint::report_item::ReportItem;
 use mq_content_lint::{LintConfig, Linter, RuleId, Severity};
 use rayon::prelude::*;
@@ -33,6 +34,12 @@ struct Cli {
     /// Only report diagnostics at or above this severity (info, warning, error)
     #[arg(long, default_value = "info")]
     min_severity: SeverityArg,
+
+    /// Write a starter `mq-content-lint.toml` in the current directory, then exit. Every setting
+    /// in it is commented out, so the file documents what's available without changing any
+    /// rule's behavior until you uncomment something. Refuses to overwrite an existing file.
+    #[arg(long)]
+    init: bool,
 
     /// Print all built-in rule IDs, their default severity, and mq selector, then exit
     #[arg(long)]
@@ -123,6 +130,11 @@ fn main() -> ExitCode {
 fn run() -> io::Result<bool> {
     let cli = Cli::parse();
     let mut w = BufWriter::new(io::stdout());
+
+    if cli.init {
+        init_config_in(Path::new("."), &mut w)?;
+        return Ok(false);
+    }
 
     if cli.list_rules {
         list_rules(&mut w)?;
@@ -584,6 +596,63 @@ fn generate_man_page(w: &mut impl Write) -> io::Result<()> {
     clap_mangen::Man::new(Cli::command()).render(w)
 }
 
+/// A starter `mq-content-lint.toml`. Every setting is commented out, so writing it doesn't
+/// change any rule's behavior — it's a discoverable reference for what's configurable, not an
+/// opinion about what a new project should turn on. See README's Configuration section, or
+/// `--list-rules`/`--explain <rule-id>` for the full rule catalog.
+const STARTER_CONFIG: &str = r#"# mq-content-lint configuration.
+# See https://github.com/harehare/mq-content-lint#configuration for the full reference, or run
+# `mq-content-lint --list-rules` / `--explain <rule-id>` to browse rules from the CLI.
+#
+# Every key below is optional and commented out — with no config at all, every rule already runs
+# at its default severity except a handful that are opt-in by nature (missing_front_matter_key,
+# required_headings, proper_names, link_image_style), since none of those has a sensible default
+# to guess. Uncomment and edit what you need; delete the rest.
+
+# Gitignore-syntax patterns for paths the directory walk should skip, on top of whatever
+# .gitignore/.mq-content-lintignore it already finds.
+# ignore = ["vendor/**"]
+
+# [rules]
+# A rule accepts a bool (enable/disable at its default severity), a severity string ("error",
+# "warning", "info"), or a table for rules with extra options (a severity override plus whatever
+# keys that rule reads).
+# heading_hierarchy_skip = "warning"
+# no_inline_html = false
+#
+# [rules.line_length]
+# limit = 100
+# code_blocks = false
+
+# [front_matter]
+# Keys required in every linted document's YAML (`---`) or TOML (`+++`) front matter block.
+# required_keys = ["title"]
+
+# Custom rules: your own mq queries as lint rules, run alongside the built-ins above. `fix` is
+# optional. See README's Custom rules section, or https://mqlang.org for query syntax.
+# [[custom_rules]]
+# id = "no_todo"
+# query = 'select(contains(to_text(), "TODO"))'
+# message = "found a TODO marker"
+# severity = "warning" # optional, defaults to "warning"
+"#;
+
+/// Writes [`STARTER_CONFIG`] to `dir`/`mq-content-lint.toml` (`--init`), refusing to overwrite a
+/// file that's already there rather than risk clobbering an existing setup. Takes `dir` (rather
+/// than assuming the process's current directory) so this is testable without touching global
+/// process state.
+fn init_config_in(dir: &Path, w: &mut impl Write) -> io::Result<()> {
+    let path = dir.join(CONFIG_FILE_NAME);
+    if path.exists() {
+        return Err(io::Error::other(format!(
+            "{CONFIG_FILE_NAME} already exists in the current directory; not overwriting it"
+        )));
+    }
+    std::fs::write(path, STARTER_CONFIG)?;
+    writeln!(w, "{} wrote {CONFIG_FILE_NAME}", "✓".bright_green().bold())?;
+    Ok(())
+}
+
 fn list_rules(w: &mut impl Write) -> io::Result<()> {
     let mut rules = mq_content_lint::rules::all_rules();
     rules.sort_by_key(|r| r.id());
@@ -718,6 +787,84 @@ mod tests {
         assert!(cli.print_json_schema);
         let cli = Cli::try_parse_from(["mq-content-lint"]).unwrap();
         assert!(!cli.print_json_schema);
+    }
+
+    #[test]
+    fn test_cli_init_parses() {
+        let cli = Cli::try_parse_from(["mq-content-lint", "--init"]).unwrap();
+        assert!(cli.init);
+        let cli = Cli::try_parse_from(["mq-content-lint"]).unwrap();
+        assert!(!cli.init);
+    }
+
+    #[test]
+    fn test_starter_config_is_entirely_commented_out() {
+        for line in STARTER_CONFIG.lines() {
+            let trimmed = line.trim();
+            assert!(
+                trimmed.is_empty() || trimmed.starts_with('#'),
+                "starter config should have no active settings, found: {line:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_starter_config_settings_are_valid_toml_once_uncommented() {
+        // The same settings STARTER_CONFIG documents (in commented-out form), with prose-only
+        // comment lines dropped — a copy rather than a mechanical strip of STARTER_CONFIG,
+        // since telling a prose comment apart from a commented-out setting isn't mechanical.
+        let uncommented = r#"
+            ignore = ["vendor/**"]
+
+            [rules]
+            heading_hierarchy_skip = "warning"
+            no_inline_html = false
+
+            [rules.line_length]
+            limit = 100
+            code_blocks = false
+
+            [front_matter]
+            required_keys = ["title"]
+
+            [[custom_rules]]
+            id = "no_todo"
+            query = 'select(contains(to_text(), "TODO"))'
+            message = "found a TODO marker"
+            severity = "warning"
+        "#;
+        LintConfig::from_toml_str(uncommented).unwrap();
+    }
+
+    #[test]
+    fn test_init_config_in_writes_the_starter_config() {
+        let dir = std::env::temp_dir().join(format!("mq-content-lint-init-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut out = Vec::new();
+        init_config_in(&dir, &mut out).unwrap();
+
+        let written = std::fs::read_to_string(dir.join(CONFIG_FILE_NAME)).unwrap();
+        assert_eq!(written, STARTER_CONFIG);
+        assert!(String::from_utf8(out).unwrap().contains(CONFIG_FILE_NAME));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_init_config_in_refuses_to_overwrite_an_existing_config() {
+        let dir = std::env::temp_dir().join(format!("mq-content-lint-init-overwrite-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(CONFIG_FILE_NAME), "ignore = [\"custom\"]\n").unwrap();
+
+        let mut out = Vec::new();
+        let result = init_config_in(&dir, &mut out);
+
+        assert!(result.is_err());
+        let preserved = std::fs::read_to_string(dir.join(CONFIG_FILE_NAME)).unwrap();
+        assert_eq!(preserved, "ignore = [\"custom\"]\n");
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
