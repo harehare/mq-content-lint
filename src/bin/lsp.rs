@@ -10,8 +10,9 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use mq_content_lint::report_item::{self, ReportItem};
 use mq_content_lint::{Fix, LintConfig, Linter};
@@ -19,14 +20,22 @@ use tower_lsp::jsonrpc::Result as LspResult;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
+/// How long `did_change` waits for editing to go quiet before actually linting. A full
+/// re-lint (parse + all 53 rules) on every single keystroke would otherwise pile up behind a
+/// fast typist or a large file; this coalesces a burst of edits into one lint, the same way
+/// other LSP servers (rust-analyzer included) debounce didChange-triggered work. Chosen to feel
+/// instant once typing pauses without re-linting on every keystroke.
+const DID_CHANGE_DEBOUNCE: Duration = Duration::from_millis(200);
+
 #[tokio::main]
 async fn main() {
     let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        linter: Linter::with_default_rules(),
-        documents: RwLock::new(HashMap::new()),
-        supports_watched_files: AtomicBool::new(false),
+        linter: Arc::new(Linter::with_default_rules()),
+        documents: Arc::new(RwLock::new(HashMap::new())),
+        supports_watched_files: Arc::new(AtomicBool::new(false)),
+        debounce_generations: Arc::new(RwLock::new(DebounceGenerations::default())),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
@@ -48,14 +57,45 @@ struct DocumentState {
     entries: Vec<DiagnosticEntry>,
 }
 
+/// Tracks a monotonically increasing generation per document, so a `did_change` debounce task
+/// spawned to lint after [`DID_CHANGE_DEBOUNCE`] can tell — once it wakes up — whether a newer
+/// edit has since superseded it and it should stand down rather than publish a diagnostics report
+/// for text that's already stale.
+#[derive(Default)]
+struct DebounceGenerations(HashMap<Url, u64>);
+
+impl DebounceGenerations {
+    /// Bumps and returns `uri`'s new generation.
+    fn bump(&mut self, uri: &Url) -> u64 {
+        let next = self.0.get(uri).copied().unwrap_or(0) + 1;
+        self.0.insert(uri.clone(), next);
+        next
+    }
+
+    /// Whether `generation` is still the latest bumped for `uri` — `false` once a later `bump`
+    /// for the same `uri` has happened, or if `uri` was never bumped (e.g. already closed).
+    fn is_current(&self, uri: &Url, generation: u64) -> bool {
+        self.0.get(uri) == Some(&generation)
+    }
+
+    fn forget(&mut self, uri: &Url) {
+        self.0.remove(uri);
+    }
+}
+
+/// `Clone`, and every field cheap to clone (`Arc`s and a `Client` that's `Arc`-backed
+/// internally) — `did_change` clones the whole thing into a spawned debounce task, which needs
+/// its own `'static` handle onto the same shared state rather than a borrow of `&self`.
+#[derive(Clone)]
 struct Backend {
     client: Client,
-    linter: Linter,
-    documents: RwLock<HashMap<Url, DocumentState>>,
+    linter: Arc<Linter>,
+    documents: Arc<RwLock<HashMap<Url, DocumentState>>>,
     /// Whether the client declared `workspace.didChangeWatchedFiles.dynamicRegistration` support
     /// in its `initialize` request — set there, read in `initialized` before asking the client to
     /// watch `mq-content-lint.toml` files.
-    supports_watched_files: AtomicBool,
+    supports_watched_files: Arc<AtomicBool>,
+    debounce_generations: Arc<RwLock<DebounceGenerations>>,
 }
 
 impl Backend {
@@ -203,12 +243,53 @@ impl LanguageServer for Backend {
         let Some(change) = params.content_changes.into_iter().next_back() else {
             return;
         };
-        self.lint_and_publish(
-            params.text_document.uri,
-            change.text,
-            Some(params.text_document.version),
-        )
-        .await;
+        let uri = params.text_document.uri;
+        let version = params.text_document.version;
+
+        // Update the stored text immediately, even though linting is debounced below — `hover`,
+        // `code_action`, and `did_save` (which re-lints its own cached text rather than trusting
+        // `params.text`) all read this, and must never see content older than the keystroke that
+        // just landed.
+        let Ok(mut documents) = self.documents.write() else {
+            return;
+        };
+        documents
+            .entry(uri.clone())
+            .or_insert_with(|| DocumentState {
+                text: String::new(),
+                entries: Vec::new(),
+            })
+            .text = change.text;
+        drop(documents);
+
+        let Ok(mut generations) = self.debounce_generations.write() else {
+            return;
+        };
+        let generation = generations.bump(&uri);
+        drop(generations);
+
+        let backend = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(DID_CHANGE_DEBOUNCE).await;
+            let is_current = backend
+                .debounce_generations
+                .read()
+                .is_ok_and(|generations| generations.is_current(&uri, generation));
+            if !is_current {
+                // A newer edit landed before this one's debounce window elapsed — that edit's
+                // own debounced task will lint the (further-updated) text; linting the text this
+                // task captured now would just publish a diagnostics report that's already stale.
+                return;
+            }
+            let text = backend
+                .documents
+                .read()
+                .ok()
+                .and_then(|documents| documents.get(&uri).map(|d| d.text.clone()));
+            if let Some(text) = text {
+                backend.lint_and_publish(uri, text, Some(version)).await;
+            }
+        });
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
@@ -227,6 +308,9 @@ impl LanguageServer for Backend {
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         if let Ok(mut documents) = self.documents.write() {
             documents.remove(&params.text_document.uri);
+        }
+        if let Ok(mut generations) = self.debounce_generations.write() {
+            generations.forget(&params.text_document.uri);
         }
         self.client
             .publish_diagnostics(params.text_document.uri, Vec::new(), None)
@@ -469,6 +553,63 @@ fn to_lsp_range(range: mq_content_lint::Range) -> Range {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn uri(s: &str) -> Url {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn debounce_generations_starts_at_one_and_increments() {
+        let mut generations = DebounceGenerations::default();
+        let a = uri("file:///a.md");
+        assert_eq!(generations.bump(&a), 1);
+        assert_eq!(generations.bump(&a), 2);
+        assert_eq!(generations.bump(&a), 3);
+    }
+
+    #[test]
+    fn debounce_generations_is_current_only_for_the_latest_bump() {
+        let mut generations = DebounceGenerations::default();
+        let a = uri("file:///a.md");
+        let first = generations.bump(&a);
+        assert!(generations.is_current(&a, first));
+
+        let second = generations.bump(&a);
+        assert!(
+            !generations.is_current(&a, first),
+            "superseded generation should no longer be current"
+        );
+        assert!(generations.is_current(&a, second));
+    }
+
+    #[test]
+    fn debounce_generations_tracks_each_uri_independently() {
+        let mut generations = DebounceGenerations::default();
+        let a = uri("file:///a.md");
+        let b = uri("file:///b.md");
+        let ga = generations.bump(&a);
+        let gb = generations.bump(&b);
+        assert!(generations.is_current(&a, ga));
+        assert!(generations.is_current(&b, gb));
+        // Bumping one doesn't affect the other.
+        generations.bump(&a);
+        assert!(generations.is_current(&b, gb));
+    }
+
+    #[test]
+    fn debounce_generations_is_not_current_for_an_unbumped_uri() {
+        let generations = DebounceGenerations::default();
+        assert!(!generations.is_current(&uri("file:///never-bumped.md"), 1));
+    }
+
+    #[test]
+    fn debounce_generations_forget_clears_a_uris_generation() {
+        let mut generations = DebounceGenerations::default();
+        let a = uri("file:///a.md");
+        let g = generations.bump(&a);
+        generations.forget(&a);
+        assert!(!generations.is_current(&a, g));
+    }
 
     #[test]
     fn to_lsp_range_converts_one_based_to_zero_based() {
