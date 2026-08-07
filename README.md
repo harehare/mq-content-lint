@@ -201,7 +201,9 @@ cargo install mq-content-lint --features lsp
 `mq-content-lint-lsp` is a [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
 server, so any LSP-capable editor can get live diagnostics, hover text, and quick-fix code actions
 by pointing it at the binary over stdio — it reuses the library directly rather than shelling out
-to the CLI and parsing its output. Every diagnostic with a machine-applicable fix offers it as a
+to the CLI and parsing its output. A burst of rapid edits (fast typing, a large paste) is debounced
+into a single re-lint ~200ms after things go quiet, rather than a full re-lint on every keystroke.
+Every diagnostic with a machine-applicable fix offers it as a
 quick fix; every diagnostic also offers a second quick fix that inserts a [disable
 comment](#inline-disable-comments) for just that line, for the cases a fix can't cover. Editing an
 `mq-content-lint.toml` re-lints every open document automatically, no server restart needed, for
