@@ -27,7 +27,10 @@ required-features = ["lsp"]
 
 [dependencies]
 clap = { version = "4.6.5", features = ["derive"], optional = true }
+clap_complete = { version = "4.6.9", optional = true }
+clap_mangen = { version = "0.3.2", optional = true }
 colored = { version = "3.1.1", optional = true }
+ec4rs = "1.2.0"
 ignore = { version = "0.4.33", optional = true }
 miette = { version = "7.6.0", optional = true }
 mq-lang = "0.8.1"
@@ -48,7 +51,17 @@ tower-lsp = { version = "0.20.0", optional = true }
 # Library consumers who only want `mq_content_lint::Linter` etc. should depend on this crate with
 # `default-features = false` to skip the CLI's dependencies (clap, colored, ...) entirely.
 default = ["cli"]
-cli = ["dep:clap", "dep:colored", "dep:miette", "dep:rayon", "dep:similar", "dep:notify", "dep:ignore"]
+cli = [
+    "dep:clap",
+    "dep:clap_complete",
+    "dep:clap_mangen",
+    "dep:colored",
+    "dep:miette",
+    "dep:rayon",
+    "dep:similar",
+    "dep:notify",
+    "dep:ignore",
+]
 # Opt-in (not part of `default`): `cargo install mq-content-lint --features lsp` installs both
 # the CLI and mq-content-lint-lsp; `--no-default-features --features lsp` installs only the LSP
 # server.

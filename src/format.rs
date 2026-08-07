@@ -1,6 +1,7 @@
 //! Diagnostic output formats for the `mq-content-lint` CLI.
 
 mod json;
+mod rdjson;
 mod sarif;
 mod text;
 
@@ -18,6 +19,9 @@ pub(crate) enum OutputFormat {
     Json,
     /// SARIF 2.1.0 JSON, for GitHub code scanning and other SARIF consumers
     Sarif,
+    /// RDJSON, for piping into `reviewdog -f=rdjson` (e.g. `-reporter=github-pr-review` for
+    /// inline PR comments)
+    Rdjson,
 }
 
 /// Dispatches to the writer for the requested output format.
@@ -35,5 +39,6 @@ pub(crate) fn write_report(
         }
         OutputFormat::Json => json::write_json_report(w, results),
         OutputFormat::Sarif => sarif::write_sarif_report(w, results),
+        OutputFormat::Rdjson => rdjson::write_rdjson_report(w, results),
     }
 }
