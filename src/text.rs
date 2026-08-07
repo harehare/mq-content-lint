@@ -6,6 +6,36 @@ pub(crate) fn numbered_lines(source: &str) -> impl Iterator<Item = (usize, &str)
     source.lines().enumerate().map(|(i, line)| (i + 1, line))
 }
 
+/// A document's fenced/indented code block line ranges (`(start_line, end_line)`, 1-based and
+/// inclusive), for O(log n) "is this line inside a code block" lookups.
+///
+/// Several rules scan raw source lines rather than the AST (so they can catch text that never
+/// became the node type they're checking for) and skip lines inside code blocks while doing it —
+/// checking membership by scanning the range list for every single line makes such a rule
+/// O(lines × code blocks) overall, quadratic for a document where both scale with size. Build one
+/// `CodeBlockLines` from the same ranges before the per-line loop instead.
+pub(crate) struct CodeBlockLines {
+    /// Sorted by `start_line`, non-overlapping — exactly what walking a document's `Code` nodes
+    /// in document order produces, which is the only way this is ever constructed.
+    ranges: Vec<(usize, usize)>,
+}
+
+impl CodeBlockLines {
+    pub(crate) fn new(ranges: Vec<(usize, usize)>) -> Self {
+        Self { ranges }
+    }
+
+    /// Whether `line_number` (1-based) falls inside any code block range.
+    pub(crate) fn contains(&self, line_number: usize) -> bool {
+        // Ranges are sorted and non-overlapping, so the only one that could contain
+        // `line_number` is the last one starting at or before it.
+        match self.ranges.partition_point(|&(start, _)| start <= line_number) {
+            0 => false,
+            i => line_number <= self.ranges[i - 1].1,
+        }
+    }
+}
+
 /// `source`'s lines, indexed once for O(1) lookup by 1-based line number.
 ///
 /// A rule that needs a specific line for each of `N` matching AST nodes (e.g. every heading,
@@ -96,6 +126,26 @@ mod tests {
     fn numbered_lines_starts_at_one() {
         let lines: Vec<_> = numbered_lines("a\nb\nc").collect();
         assert_eq!(lines, vec![(1, "a"), (2, "b"), (3, "c")]);
+    }
+
+    #[test]
+    fn code_block_lines_reports_membership_in_a_range() {
+        let code = CodeBlockLines::new(vec![(3, 5), (10, 10)]);
+        assert!(!code.contains(1));
+        assert!(!code.contains(2));
+        assert!(code.contains(3));
+        assert!(code.contains(4));
+        assert!(code.contains(5));
+        assert!(!code.contains(6));
+        assert!(!code.contains(9));
+        assert!(code.contains(10));
+        assert!(!code.contains(11));
+    }
+
+    #[test]
+    fn code_block_lines_with_no_ranges_contains_nothing() {
+        let code = CodeBlockLines::new(Vec::new());
+        assert!(!code.contains(1));
     }
 
     #[test]
