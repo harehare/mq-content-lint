@@ -759,6 +759,17 @@ mod tests {
     }
 
     #[test]
+    fn test_cli_explain_suggests_a_close_typo() {
+        let Err(err) = Cli::try_parse_from(["mq-content-lint", "--explain", "line_lenght"]) else {
+            panic!("line_lenght should not parse as a known rule id");
+        };
+        assert!(
+            err.to_string().contains("did you mean `line_length`?"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    #[test]
     fn test_explain_rule_prints_description_severity_and_options() {
         let mut out = Vec::new();
         explain_rule(&mut out, RuleId::LineLength).unwrap();
