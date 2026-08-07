@@ -64,6 +64,12 @@ mq-content-lint --version
 
 # Print a shell completion script (bash, zsh, fish, powershell, or elvish)
 mq-content-lint --generate-completions zsh > ~/.zsh/completions/_mq-content-lint
+
+# Print a roff man page
+mq-content-lint --generate-man-page > /usr/local/share/man/man1/mq-content-lint.1
+
+# Print a JSON Schema for mq-content-lint.toml — see Configuration
+mq-content-lint --print-json-schema > mq-content-lint.schema.json
 ```
 
 Exit code is non-zero if any diagnostic at or above `--min-severity` (default `info`, i.e. "any
@@ -240,6 +246,33 @@ required_keys = ["title"]
 ```
 
 See [`mq-content-lint.toml`](./mq-content-lint.toml) in this repo for a fully-commented example.
+
+### Editor autocomplete and validation
+
+`mq-content-lint --print-json-schema > mq-content-lint.schema.json` writes a JSON Schema for
+`mq-content-lint.toml` — rule names, severity strings, and the `front_matter`/`custom_rules`/
+`ignore` shapes, so an editor can flag a typo'd rule name or option before you ever run the
+linter. Reference it from the top of the config file with a `#:schema` pragma comment (supported
+by [Taplo](https://taplo.tamasfe.dev/) / the "Even Better TOML" VS Code extension):
+
+```toml
+#:schema ./mq-content-lint.schema.json
+
+[rules]
+...
+```
+
+Regenerate the schema after upgrading if new rules were added — it isn't published anywhere, so
+each project keeps its own local copy.
+
+### `.editorconfig`
+
+If a project has an [`.editorconfig`](https://editorconfig.org) with `max_line_length` set,
+`line_length`'s `limit` falls back to it when `mq-content-lint.toml` doesn't set one explicitly (a
+config file's own `limit` always wins). No other `.editorconfig` property is read — properties
+like `indent_size` don't map cleanly onto `ul_indent`/`list_indent`, which count spaces per list
+nesting level rather than a single document-wide indent width, so this crate doesn't guess at a
+mapping for them.
 
 **With no config file at all**, every rule runs at its default severity *except* the handful that
 are opt-in by nature — `missing_front_matter_key` (no keys to require), `required_headings` (no

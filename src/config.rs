@@ -138,6 +138,10 @@ pub struct LintConfig {
     /// walked — a file named explicitly on the command line is always linted regardless. Empty by
     /// default (no additional exclusions beyond `.gitignore`/`.mq-content-lintignore`).
     pub ignore: Vec<String>,
+    /// `.editorconfig`'s `max_line_length`, as a fallback for `line_length`'s `limit` when the
+    /// config file doesn't set one explicitly. Only populated by [`LintConfig::discover`] — see
+    /// [`crate::editorconfig`].
+    pub(crate) editorconfig_max_line_length: Option<usize>,
 }
 
 impl LintConfig {
@@ -181,6 +185,7 @@ impl LintConfig {
             required_front_matter_keys: file.front_matter.required_keys,
             custom_rules: file.custom_rules,
             ignore: file.ignore,
+            editorconfig_max_line_length: None,
         })
     }
 
@@ -227,6 +232,7 @@ impl LintConfig {
         for path in candidates {
             merged = merged.cascade(Self::load_from_path(&path)?);
         }
+        merged.editorconfig_max_line_length = crate::editorconfig::max_line_length(start_dir);
         Ok(merged)
     }
 
@@ -425,6 +431,17 @@ mod tests {
 
         let config = LintConfig::discover(&nested).unwrap();
         assert_eq!(config.required_front_matter_keys, vec!["title"]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn discover_picks_up_editorconfig_max_line_length() {
+        let dir = tempdir();
+        std::fs::write(dir.join(".editorconfig"), "root = true\n\n[*]\nmax_line_length = 72\n").unwrap();
+
+        let config = LintConfig::discover(&dir).unwrap();
+        assert_eq!(config.editorconfig_max_line_length, Some(72));
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
