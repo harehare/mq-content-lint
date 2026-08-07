@@ -381,7 +381,48 @@ impl FromStr for RuleId {
             .iter()
             .copied()
             .find(|id| id.as_str() == s)
-            .ok_or_else(|| format!("unknown rule id `{s}`"))
+            .ok_or_else(|| format!("unknown rule id `{s}`{}", did_you_mean_suffix(s)))
+    }
+}
+
+/// Case-sensitive Levenshtein edit distance between `a` and `b`.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut curr = vec![0; b.len() + 1];
+
+    for (i, &ca) in a.iter().enumerate() {
+        curr[0] = i + 1;
+        for (j, &cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[b.len()]
+}
+
+/// The closest built-in [`RuleId`] to `input` by edit distance — `None` if nothing is close
+/// enough to plausibly be a typo of it rather than an unrelated string. The threshold scales
+/// with `input`'s length (never more than 3) so a short, unrelated input doesn't match anything.
+pub(crate) fn closest_rule_id(input: &str) -> Option<RuleId> {
+    let threshold = (input.chars().count() / 2).clamp(1, 3);
+    RuleId::ALL
+        .iter()
+        .map(|id| (*id, levenshtein(input, id.as_str())))
+        .min_by_key(|(_, dist)| *dist)
+        .filter(|(_, dist)| *dist <= threshold)
+        .map(|(id, _)| id)
+}
+
+/// Formats `closest_rule_id(input)` as a `" (did you mean `x`?)"` suffix for an error message,
+/// or an empty string if nothing was close enough to suggest.
+pub(crate) fn did_you_mean_suffix(input: &str) -> String {
+    match closest_rule_id(input) {
+        Some(id) => format!(" (did you mean `{}`?)", id.as_str()),
+        None => String::new(),
     }
 }
 
@@ -790,6 +831,37 @@ mod tests {
     #[test]
     fn rule_id_from_str_rejects_unknown() {
         assert!("not_a_real_rule".parse::<RuleId>().is_err());
+    }
+
+    #[test]
+    fn rule_id_from_str_suggests_a_close_typo() {
+        let err = "line_lenght".parse::<RuleId>().unwrap_err();
+        assert!(
+            err.contains("did you mean `line_length`?"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    #[test]
+    fn rule_id_from_str_does_not_suggest_for_an_unrelated_string() {
+        let err = "xyzabc123".parse::<RuleId>().unwrap_err();
+        assert!(!err.contains("did you mean"), "unexpected error message: {err}");
+    }
+
+    #[test]
+    fn closest_rule_id_finds_every_rule_ids_own_typo_of_itself() {
+        // A one-character truncation of every rule id should still resolve back to it — a cheap
+        // way to exercise the threshold against the full, varied-length rule id list rather than
+        // just a couple of hand-picked examples.
+        for id in RuleId::ALL {
+            let name = id.as_str();
+            let truncated = &name[..name.len() - 1];
+            assert_eq!(
+                closest_rule_id(truncated),
+                Some(*id),
+                "truncating {name} to {truncated} should still suggest {name}"
+            );
+        }
     }
 
     #[test]

@@ -223,6 +223,10 @@ overriding, since they're typically additive rather than competing settings.
 A rule-specific key inside `[rules.<id>]` is validated against that rule's known options — a typo
 like `[rules.line_length] limt = 100` is a config error at load time, not a silently-ignored key.
 
+A typo'd rule name — `[rules] line_lenght = true`, or `--explain`/`--disable <rule-id>` on the
+command line — gets a "did you mean `line_length`?" suggestion in the error when one built-in rule
+id is a close enough match.
+
 ```toml
 [rules]
 # A rule accepts a bool (enable/disable at its default severity), a severity string ("error",

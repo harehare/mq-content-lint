@@ -114,8 +114,12 @@ pub enum ConfigError {
         #[source]
         source: Box<toml::de::Error>,
     },
-    #[error("{path}: unknown rule `{rule}` in [rules] table")]
-    UnknownRule { path: PathBuf, rule: String },
+    #[error("{path}: unknown rule `{rule}` in [rules] table{suggestion}")]
+    UnknownRule {
+        path: PathBuf,
+        rule: String,
+        suggestion: String,
+    },
     #[error("{path}: unknown option `{key}` for rule `{rule}` in [rules.{rule}] table")]
     UnknownRuleOption { path: PathBuf, rule: String, key: String },
 }
@@ -161,6 +165,7 @@ impl LintConfig {
         for (name, setting) in file.rules {
             let rule_id = name.parse::<RuleId>().map_err(|_| ConfigError::UnknownRule {
                 path: path.to_path_buf(),
+                suggestion: crate::message::did_you_mean_suffix(&name),
                 rule: name,
             })?;
             if let RuleSetting::Options(options) = &setting {
@@ -405,6 +410,21 @@ mod tests {
             "#,
         );
         assert!(matches!(result, Err(ConfigError::UnknownRule { .. })));
+    }
+
+    #[test]
+    fn unknown_rule_name_suggests_a_close_typo() {
+        let result = LintConfig::from_toml_str(
+            r#"
+            [rules]
+            line_lenght = true
+            "#,
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("did you mean `line_length`?"),
+            "unexpected error message: {err}"
+        );
     }
 
     #[test]
