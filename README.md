@@ -39,7 +39,8 @@ mq-content-lint README.md
 # or matched by the config's `ignore` patterns — see Configuration)
 mq-content-lint docs/
 
-# Read from stdin
+# Read from stdin (running with no arguments and no piped input prints a hint on stderr instead
+# of just hanging, in case you meant to pass a file/directory)
 cat README.md | mq-content-lint
 
 # Rewrite files in place, applying every diagnostic with a machine-applicable fix
@@ -96,7 +97,8 @@ mean either "insert here" or "renumber" — never populate a fix; see the "Fix?"
 if it's configured with a `fix` expression.
 
 Not sure what `--fix` would do before it does it? `--diff` computes the exact same fixes but never
-writes — files (and stdin's fixed content) stay untouched, and a unified diff is printed to stdout
+writes — files (and stdin's fixed content) stay untouched, and a unified diff (colored like `git
+diff` — removed lines red, added lines green — when writing to a terminal) is printed to stdout
 instead. It works standalone (no need to pass `--fix` too) and exits non-zero if anything would
 change, so `mq-content-lint --diff docs/` doubles as a CI check for "is everything already
 formatted."

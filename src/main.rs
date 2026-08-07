@@ -1,7 +1,7 @@
 mod format;
 mod watch;
 
-use std::io::{self, BufWriter, Read, Write};
+use std::io::{self, BufWriter, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::str::FromStr;
@@ -180,8 +180,15 @@ fn run() -> io::Result<bool> {
             ));
         }
 
+        let mut stdin = io::stdin();
+        if stdin.is_terminal() {
+            // No piped input and no file/directory argument — reading from stdin now would just
+            // block silently, waiting on a human who most likely meant to pass a path. Note it on
+            // stderr (never stdout, so it can't corrupt a real piped report) before blocking.
+            write_stdin_hint(&mut io::stderr())?;
+        }
         let mut content = String::new();
-        io::stdin().read_to_string(&mut content)?;
+        stdin.read_to_string(&mut content)?;
 
         if cli.fix || cli.diff {
             let (fixed, _, _) = fix_source(&content, &linter, &config)?;
@@ -344,13 +351,56 @@ fn process_file(
     })
 }
 
+/// Writes a one-line note that `mq-content-lint` is about to block reading stdin — shown when
+/// stdin is an interactive terminal (no piped input, no file/directory argument), so a bare
+/// invocation doesn't just hang with no explanation.
+fn write_stdin_hint(w: &mut impl Write) -> io::Result<()> {
+    writeln!(
+        w,
+        "{} reading from stdin; pass a file or directory argument instead, or pipe input in (Ctrl-D to end input)",
+        "note:".dimmed()
+    )
+}
+
 /// A unified diff between `old` and `new`, headered with `label` (`a/<label>` / `b/<label>`,
-/// like `git diff`'s default headers).
+/// like `git diff`'s default headers) and colored the way `git diff` colors its own output.
 fn compute_diff(label: &str, old: &str, new: &str) -> String {
     let diff = similar::TextDiff::from_lines(old, new);
-    diff.unified_diff()
+    let unified = diff
+        .unified_diff()
         .header(&format!("a/{label}"), &format!("b/{label}"))
-        .to_string()
+        .to_string();
+    colorize_unified_diff(&unified)
+}
+
+/// Colors a unified diff's lines the way `git diff` does: file headers bold, hunk headers cyan,
+/// removed lines red, added lines green, context lines left as-is. A no-op (returns the input
+/// unchanged, modulo the trailing newline) when colors are disabled (`NO_COLOR`, non-tty output,
+/// ...), same as every other colored piece of this CLI's output.
+fn colorize_unified_diff(unified: &str) -> String {
+    let mut out = unified
+        .lines()
+        .map(|line| {
+            if line.starts_with("+++") || line.starts_with("---") {
+                line.bold().to_string()
+            } else if line.starts_with("@@") {
+                line.cyan().to_string()
+            } else if line.starts_with('+') {
+                line.green().to_string()
+            } else if line.starts_with('-') {
+                line.red().to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    // `.lines()` drops the trailing newline every non-empty unified diff has; put it back so
+    // callers see exactly the same framing as before colorizing.
+    if unified.ends_with('\n') {
+        out.push('\n');
+    }
+    out
 }
 
 /// Parses `content` as Markdown and returns every built-in plus custom-rule diagnostic, merged
@@ -1108,6 +1158,33 @@ mod tests {
         assert!(diff.contains("+++ b/test.md"));
         assert!(diff.contains("-#Title"));
         assert!(diff.contains("+# Title"));
+    }
+
+    #[test]
+    fn test_colorize_unified_diff_preserves_every_line_and_the_trailing_newline() {
+        let unified = "--- a/test.md\n+++ b/test.md\n@@ -1 +1 @@\n-#Title\n+# Title\n";
+        let colorized = colorize_unified_diff(unified);
+        // Colors are disabled under the test harness's non-tty stdout (same as every other
+        // colored piece of this CLI's output), so this also doubles as a check that plain-text
+        // content survives untouched when colorizing is a no-op.
+        for line in unified.lines() {
+            assert!(colorized.contains(line), "missing line {line:?} in {colorized:?}");
+        }
+        assert!(colorized.ends_with('\n'));
+    }
+
+    #[test]
+    fn test_colorize_unified_diff_of_an_empty_diff_is_empty() {
+        assert_eq!(colorize_unified_diff(""), "");
+    }
+
+    #[test]
+    fn test_write_stdin_hint_mentions_a_file_argument_and_piping() {
+        let mut out = Vec::new();
+        write_stdin_hint(&mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("file or directory"));
+        assert!(text.contains("pipe"));
     }
 
     #[test]
