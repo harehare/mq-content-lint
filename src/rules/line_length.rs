@@ -47,13 +47,11 @@ impl Rule for LineLength {
             });
             ranges
         };
+        let code_lines = crate::text::CodeBlockLines::new(code_ranges);
 
         crate::text::numbered_lines(source)
             .filter_map(|(line_number, line)| {
-                if code_ranges
-                    .iter()
-                    .any(|(start, end)| *start <= line_number && line_number <= *end)
-                {
+                if code_lines.contains(line_number) {
                     return None;
                 }
                 let length = line.chars().count();

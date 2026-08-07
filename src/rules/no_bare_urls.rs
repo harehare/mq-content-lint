@@ -61,13 +61,11 @@ impl Rule for NoBareUrls {
                 code_ranges.push((position.start.line, position.end.line));
             }
         });
+        let code_lines = crate::text::CodeBlockLines::new(code_ranges);
 
         let mut diagnostics = Vec::new();
         for (line_number, line) in crate::text::numbered_lines(source) {
-            if code_ranges
-                .iter()
-                .any(|(start, end)| *start <= line_number && line_number <= *end)
-            {
+            if code_lines.contains(line_number) {
                 continue;
             }
             for (start, end) in find_urls(line) {

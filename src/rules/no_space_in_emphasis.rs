@@ -13,8 +13,9 @@ use crate::{Diagnostic, Fix, LintConfig, LintMessage, Range, RuleId, Severity};
 pub(crate) struct NoSpaceInEmphasis;
 
 /// Finds `<marker> <content> <marker>` spans (space just inside a `*`/`_` pair) in `line`,
-/// returning `(char_start, char_end, inner_trimmed)`.
-fn find_spaced_emphasis(line: &str) -> Vec<(usize, usize, String)> {
+/// returning `(char_start, char_end, marker, inner_trimmed)`. `marker` comes straight from the
+/// scan rather than making a caller re-derive it with a second, position-dependent lookup.
+fn find_spaced_emphasis(line: &str) -> Vec<(usize, usize, char, String)> {
     let chars: Vec<char> = line.chars().collect();
     let mut result = Vec::new();
     let mut i = 0;
@@ -34,7 +35,7 @@ fn find_spaced_emphasis(line: &str) -> Vec<(usize, usize, String)> {
         }
         let inner: String = chars[i + 1..j].iter().collect();
         if inner.trim().chars().any(char::is_alphanumeric) {
-            result.push((i, j + 1, inner.trim().to_string()));
+            result.push((i, j + 1, marker, inner.trim().to_string()));
             i = j + 1;
         } else {
             i += 1;
@@ -61,18 +62,15 @@ impl Rule for NoSpaceInEmphasis {
                 code_ranges.push((position.start.line, position.end.line));
             }
         });
+        let code_lines = crate::text::CodeBlockLines::new(code_ranges);
 
         let mut diagnostics = Vec::new();
         for (line_number, line) in crate::text::numbered_lines(source) {
-            if code_ranges
-                .iter()
-                .any(|(start, end)| *start <= line_number && line_number <= *end)
-            {
+            if code_lines.contains(line_number) {
                 continue;
             }
-            for (start, end, inner) in find_spaced_emphasis(line) {
+            for (start, end, marker, inner) in find_spaced_emphasis(line) {
                 let range = Range::single_line(line_number, start + 1, end + 1);
-                let marker = line.chars().nth(start).unwrap();
                 diagnostics.push(
                     Diagnostic::new(LintMessage::NoSpaceInEmphasis, self.default_severity())
                         .with_range(range)
