@@ -605,9 +605,9 @@ const STARTER_CONFIG: &str = r#"# mq-content-lint configuration.
 # `mq-content-lint --list-rules` / `--explain <rule-id>` to browse rules from the CLI.
 #
 # Every key below is optional and commented out — with no config at all, every rule already runs
-# at its default severity except a handful that are opt-in by nature (missing_front_matter_key,
-# required_headings, proper_names, link_image_style), since none of those has a sensible default
-# to guess. Uncomment and edit what you need; delete the rest.
+# at its default severity except a handful that are opt-in by nature and no-ops until configured
+# (run `mq-content-lint --list-rules` to see which). Uncomment and edit what you need; delete the
+# rest.
 
 # Gitignore-syntax patterns for paths the directory walk should skip, on top of whatever
 # .gitignore/.mq-content-lintignore it already finds.
@@ -643,12 +643,20 @@ const STARTER_CONFIG: &str = r#"# mq-content-lint configuration.
 /// process state.
 fn init_config_in(dir: &Path, w: &mut impl Write) -> io::Result<()> {
     let path = dir.join(CONFIG_FILE_NAME);
-    if path.exists() {
-        return Err(io::Error::other(format!(
-            "{CONFIG_FILE_NAME} already exists in the current directory; not overwriting it"
-        )));
-    }
-    std::fs::write(path, STARTER_CONFIG)?;
+    // `create_new` fails atomically with `AlreadyExists` if the file is already there, instead of
+    // a separate `path.exists()` check racing against another process between the check and the
+    // write.
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|err| match err.kind() {
+            io::ErrorKind::AlreadyExists => io::Error::other(format!(
+                "{CONFIG_FILE_NAME} already exists in the current directory; not overwriting it"
+            )),
+            _ => err,
+        })?;
+    file.write_all(STARTER_CONFIG.as_bytes())?;
     writeln!(w, "{} wrote {CONFIG_FILE_NAME}", "✓".bright_green().bold())?;
     Ok(())
 }
@@ -808,32 +816,32 @@ mod tests {
         }
     }
 
+    /// Extracts the TOML settings [`STARTER_CONFIG`] documents in commented-out form, dropping
+    /// prose-only comment lines: a line only survives if what's left after stripping its leading
+    /// `#` looks like TOML (blank, a `[table]` header, or a `key = value` pair). Verifying
+    /// against this instead of a hand-copied "what it should say once uncommented" string means
+    /// there's nothing to keep in sync by hand.
+    fn uncomment_toml_settings(template: &str) -> String {
+        template
+            .lines()
+            .filter_map(|line| {
+                let stripped = line.strip_prefix("# ").or_else(|| line.strip_prefix('#'))?;
+                let trimmed = stripped.trim();
+                (trimmed.is_empty() || trimmed.starts_with('[') || trimmed.contains(" = ")).then_some(stripped)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     #[test]
     fn test_starter_config_settings_are_valid_toml_once_uncommented() {
-        // The same settings STARTER_CONFIG documents (in commented-out form), with prose-only
-        // comment lines dropped — a copy rather than a mechanical strip of STARTER_CONFIG,
-        // since telling a prose comment apart from a commented-out setting isn't mechanical.
-        let uncommented = r#"
-            ignore = ["vendor/**"]
+        let uncommented = uncomment_toml_settings(STARTER_CONFIG);
+        // Guards against the extraction heuristic silently regressing to an empty (and thus
+        // trivially "valid") document.
+        assert!(uncommented.contains("[rules]"), "{uncommented}");
+        assert!(uncommented.contains("[[custom_rules]]"), "{uncommented}");
 
-            [rules]
-            heading_hierarchy_skip = "warning"
-            no_inline_html = false
-
-            [rules.line_length]
-            limit = 100
-            code_blocks = false
-
-            [front_matter]
-            required_keys = ["title"]
-
-            [[custom_rules]]
-            id = "no_todo"
-            query = 'select(contains(to_text(), "TODO"))'
-            message = "found a TODO marker"
-            severity = "warning"
-        "#;
-        LintConfig::from_toml_str(uncommented).unwrap();
+        LintConfig::from_toml_str(&uncommented).unwrap();
     }
 
     #[test]
