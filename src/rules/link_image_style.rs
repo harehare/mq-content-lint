@@ -5,11 +5,17 @@
 //! `[rules.link_image_style] autolink/inline/full/collapsed/shortcut = false` to disallow it.
 //! Not auto-fixable — converting between styles can need information (a label, a URL) this rule
 //! doesn't have.
+//!
+//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s — see
+//! [`super::no_space_in_code`]'s doc comment — so `position` is converted to a char-counted
+//! `Range` through [`crate::text::LineByteIndex::char_column`] before it's passed to
+//! [`crate::fix::slice`], or a link/image containing multi-byte text would misalign the raw
+//! substring extracted for style detection.
 
 use mq_markdown::Node;
 
 use crate::rules::Rule;
-use crate::{Diagnostic, LintConfig, LintMessage, RuleId, Severity};
+use crate::{Diagnostic, LintConfig, LintMessage, Range, RuleId, Severity};
 
 pub(crate) struct LinkImageStyle;
 
@@ -61,7 +67,19 @@ impl Rule for LinkImageStyle {
                 _ => return,
             };
             let Some(position) = position else { return };
-            let Some(raw) = crate::fix::slice(source, &byte_index, position.clone().into()) else {
+            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+                return;
+            };
+            let Some(end_column) = byte_index.char_column(position.end.line, position.end.column) else {
+                return;
+            };
+            let range = Range {
+                start_line: position.start.line,
+                start_column,
+                end_line: position.end.line,
+                end_column,
+            };
+            let Some(raw) = crate::fix::slice(source, &byte_index, range) else {
                 return;
             };
             let found = detect_style(raw);
@@ -127,5 +145,21 @@ mod tests {
         let source = "[text](https://example.com)\n";
         let doc: mq_markdown::Markdown = source.parse().unwrap();
         assert!(LinkImageStyle.check(&doc, source, &config).is_empty());
+    }
+
+    #[test]
+    fn detects_a_disallowed_style_after_multi_byte_text() {
+        let config = LintConfig::from_toml_str("[rules.link_image_style]\nautolink = false\n").unwrap();
+        let source = "従うように <https://example.com>\n";
+        let doc: mq_markdown::Markdown = source.parse().unwrap();
+        let diagnostics = LinkImageStyle.check(&doc, source, &config);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message,
+            LintMessage::LinkImageStyle {
+                expected: "inline/full/collapsed/shortcut".to_string(),
+                found: "autolink".to_string(),
+            }
+        );
     }
 }

@@ -2,6 +2,13 @@
 //! CommonMark itself strips exactly one leading/trailing space if the span both starts and ends
 //! with one, so this inspects the raw source (not [`mq_markdown::CodeInline::value`], which has
 //! that normalization already applied) to catch any left over.
+//!
+//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s (confirmed empirically — e.g.
+//! a code span containing "従うように" reports an `end.column` matching the line's byte length,
+//! not its character count). Every column here is converted through
+//! [`crate::text::LineByteIndex::char_column`] before use, so it lines up with `Range`/
+//! `crate::fix::slice`'s char-counted convention; skipping that conversion is what used to panic
+//! ("byte index is not a char boundary") on a code span containing multi-byte characters.
 
 use mq_markdown::Node;
 
@@ -28,7 +35,14 @@ impl Rule for NoSpaceInCode {
             if position.start.line != position.end.line {
                 return;
             }
-            let Some(raw) = crate::fix::slice(source, &byte_index, position.clone().into()) else {
+            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+                return;
+            };
+            let Some(end_column) = byte_index.char_column(position.end.line, position.end.column) else {
+                return;
+            };
+            let span = Range::single_line(position.start.line, start_column, end_column);
+            let Some(raw) = crate::fix::slice(source, &byte_index, span) else {
                 return;
             };
             let backtick_len = raw.chars().take_while(|&c| c == '`').count();
@@ -40,8 +54,8 @@ impl Rule for NoSpaceInCode {
             if inner != trimmed && !trimmed.is_empty() {
                 let range = Range::single_line(
                     position.start.line,
-                    position.start.column + backtick_len,
-                    position.end.column - backtick_len,
+                    start_column + backtick_len,
+                    end_column - backtick_len,
                 );
                 diagnostics.push(
                     Diagnostic::new(LintMessage::NoSpaceInCode, self.default_severity())
@@ -73,5 +87,17 @@ mod tests {
         let diagnostics = run("`  text  `\n");
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].fix.as_ref().unwrap().replacement, "text");
+    }
+
+    #[test]
+    fn no_diagnostics_for_a_clean_multi_byte_code_span() {
+        assert!(run("`従うように`\n").is_empty());
+    }
+
+    #[test]
+    fn flags_and_fixes_extra_spaces_around_multi_byte_content() {
+        let diagnostics = run("` 従うように `\n");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].fix.as_ref().unwrap().replacement, "従うように");
     }
 }

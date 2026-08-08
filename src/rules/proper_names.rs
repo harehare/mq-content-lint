@@ -2,6 +2,12 @@
 //! `[rules.proper_names] names = ["JavaScript", "GitHub"]`. A no-op with no `names` configured,
 //! like [`crate::rules::missing_front_matter_key`]. Scans [`mq_markdown::Node::Text`] content
 //! only, so a name that's already correctly cased inside code or a URL is left alone.
+//!
+//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s — see
+//! [`super::no_space_in_code`]'s doc comment — so `position.start.column` is converted through
+//! [`crate::text::LineByteIndex::char_column`] before it's combined with `find_mismatches`'s
+//! char-counted offsets, or the two would silently misalign on text containing multi-byte
+//! characters.
 
 use mq_markdown::Node;
 
@@ -48,7 +54,7 @@ impl Rule for ProperNames {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
         let names = config
             .rule_options(self.id())
             .get_str_array("names")
@@ -57,6 +63,7 @@ impl Rule for ProperNames {
             return Vec::new();
         }
 
+        let byte_index = crate::text::LineByteIndex::new(source);
         let mut diagnostics = Vec::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Text(text) = node else { return };
@@ -64,14 +71,13 @@ impl Rule for ProperNames {
             if position.start.line != position.end.line {
                 return;
             }
+            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+                return;
+            };
             for name in &names {
                 for (start, end) in find_mismatches(&text.value, name) {
                     let found: String = text.value.chars().skip(start).take(end - start).collect();
-                    let range = Range::single_line(
-                        position.start.line,
-                        position.start.column + start,
-                        position.start.column + end,
-                    );
+                    let range = Range::single_line(position.start.line, start_column + start, start_column + end);
                     diagnostics.push(
                         Diagnostic::new(
                             LintMessage::ProperNames {
@@ -123,6 +129,13 @@ mod tests {
     #[test]
     fn flags_and_fixes_incorrect_casing() {
         let diagnostics = run("javascript is great\n", &["JavaScript"]);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].fix.as_ref().unwrap().replacement, "JavaScript");
+    }
+
+    #[test]
+    fn flags_and_fixes_incorrect_casing_after_multi_byte_text() {
+        let diagnostics = run("従うように、javascript is great\n", &["JavaScript"]);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].fix.as_ref().unwrap().replacement, "JavaScript");
     }

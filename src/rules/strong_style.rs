@@ -1,11 +1,17 @@
 //! MD050: strong marker (`**text**` vs. `__text__`) should be consistent across the document.
 //! `[rules.strong_style] style` accepts `"consistent"` (default), `"asterisk"`, or
 //! `"underscore"`.
+//!
+//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s — see
+//! [`super::no_space_in_code`]'s doc comment — so `position` is converted to a char-counted
+//! `Range` through [`crate::text::LineByteIndex::char_column`] before it's used for
+//! [`crate::fix::slice`] or as the diagnostic's own `Range`/`Fix`, or strong text wrapping
+//! multi-byte content would misalign both.
 
 use mq_markdown::Node;
 
 use crate::rules::Rule;
-use crate::{Diagnostic, Fix, LintConfig, LintMessage, RuleId, Severity};
+use crate::{Diagnostic, Fix, LintConfig, LintMessage, Range, RuleId, Severity};
 
 pub(crate) struct StrongStyle;
 
@@ -40,7 +46,14 @@ impl Rule for StrongStyle {
             if position.start.line != position.end.line {
                 return;
             }
-            let Some(raw) = crate::fix::slice(source, &byte_index, position.clone().into()) else {
+            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+                return;
+            };
+            let Some(end_column) = byte_index.char_column(position.end.line, position.end.column) else {
+                return;
+            };
+            let range = Range::single_line(position.start.line, start_column, end_column);
+            let Some(raw) = crate::fix::slice(source, &byte_index, range) else {
                 return;
             };
             if raw.len() < 4 {
@@ -62,11 +75,8 @@ impl Rule for StrongStyle {
                         },
                         self.default_severity(),
                     )
-                    .with_range(position.clone())
-                    .with_fix(Fix::new(
-                        position.into(),
-                        format!("{expected_marker}{inner}{expected_marker}"),
-                    )),
+                    .with_range(range)
+                    .with_fix(Fix::new(range, format!("{expected_marker}{inner}{expected_marker}"))),
                 );
             }
         });
@@ -95,6 +105,13 @@ mod tests {
     #[test]
     fn flags_and_fixes_an_inconsistent_marker() {
         let diagnostics = run("**one** and __two__\n");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].fix.as_ref().unwrap().replacement, "**two**");
+    }
+
+    #[test]
+    fn flags_and_fixes_an_inconsistent_marker_after_multi_byte_text() {
+        let diagnostics = run("従うように **one** and __two__\n");
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].fix.as_ref().unwrap().replacement, "**two**");
     }
