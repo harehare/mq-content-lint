@@ -65,6 +65,10 @@ follow the errors if you lose track of a step.
    - **O(1) line lookup.** If you loop over matching nodes and need each one's source line, build
      one `LineIndex::new(source)` before the loop, not a `numbered_lines(source).find(...)` per
      node — the latter is O(nodes × lines), quadratic on a document where matches scale with size.
+     Scanning raw lines and need to skip fenced code blocks (see "AST or raw source?" above)? Build
+     one `CodeBlockLines::new(code_ranges)` before the line loop and call `.contains(line_number)`,
+     not `code_ranges.iter().any(|(start, end)| ...)` per line — same shape of bug, O(lines × code
+     blocks) instead of O(lines + log code blocks); see `no_bare_urls.rs` for the pattern.
    - **Fix or no fix.** Populate `.with_fix(Fix::new(range, replacement))` when there's exactly one
      correct mechanical rewrite. Leave it off when the rule can only report (no sensible default
      alt text, no way to invent front matter content, an opening/closing pair on different lines —
