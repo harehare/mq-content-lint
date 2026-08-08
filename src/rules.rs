@@ -57,6 +57,7 @@ mod single_h1;
 mod single_trailing_newline;
 mod strong_style;
 mod table_column_count;
+mod table_column_style;
 mod table_pipe_style;
 mod ul_indent;
 mod ul_style;
@@ -156,6 +157,7 @@ pub fn all_rules() -> Vec<Box<dyn Rule>> {
         Box::new(table_pipe_style::TablePipeStyle),
         Box::new(table_column_count::TableColumnCount),
         Box::new(blanks_around_tables::BlanksAroundTables),
+        Box::new(table_column_style::TableColumnStyle),
     ]
 }
 

@@ -122,6 +122,8 @@ pub enum RuleId {
     TableColumnCount,
     /// MD058: tables should be surrounded by blank lines.
     BlanksAroundTables,
+    /// MD060: table column style (padding around `|`) should be consistent.
+    TableColumnStyle,
 }
 
 impl RuleId {
@@ -180,6 +182,7 @@ impl RuleId {
         RuleId::TablePipeStyle,
         RuleId::TableColumnCount,
         RuleId::BlanksAroundTables,
+        RuleId::TableColumnStyle,
     ];
 
     /// The rule's `snake_case` identifier, as used in config keys and CLI flags.
@@ -238,6 +241,7 @@ impl RuleId {
             RuleId::TablePipeStyle => "table_pipe_style",
             RuleId::TableColumnCount => "table_column_count",
             RuleId::BlanksAroundTables => "blanks_around_tables",
+            RuleId::TableColumnStyle => "table_column_style",
         }
     }
 
@@ -287,9 +291,10 @@ impl RuleId {
             RuleId::StrongStyle => Some(Selector::Strong),
             RuleId::NoInlineHtml => Some(Selector::Html),
             RuleId::HrStyle => Some(Selector::HorizontalRule),
-            RuleId::TablePipeStyle | RuleId::TableColumnCount | RuleId::BlanksAroundTables => {
-                Some(Selector::Table(None, None))
-            }
+            RuleId::TablePipeStyle
+            | RuleId::TableColumnCount
+            | RuleId::BlanksAroundTables
+            | RuleId::TableColumnStyle => Some(Selector::Table(None, None)),
             RuleId::NoTrailingSpaces
             | RuleId::NoHardTabs
             | RuleId::NoMultipleBlanks
@@ -363,6 +368,7 @@ impl RuleId {
                 "MD056: every row in a table should have the same number of cells as the header."
             }
             RuleId::BlanksAroundTables => "MD058: tables should be surrounded by blank lines.",
+            RuleId::TableColumnStyle => "MD060: table column style (padding around `|`) should be consistent.",
         }
     }
 }
@@ -484,6 +490,7 @@ pub enum LintMessage {
     TablePipeStyle { expected: String },
     TableColumnCount { expected: usize, found: usize },
     BlanksAroundTables { above: bool },
+    TableColumnStyle { expected: String },
 }
 
 impl LintMessage {
@@ -545,6 +552,7 @@ impl LintMessage {
             LintMessage::TablePipeStyle { .. } => RuleId::TablePipeStyle,
             LintMessage::TableColumnCount { .. } => RuleId::TableColumnCount,
             LintMessage::BlanksAroundTables { .. } => RuleId::BlanksAroundTables,
+            LintMessage::TableColumnStyle { .. } => RuleId::TableColumnStyle,
         }
     }
 
@@ -655,6 +663,7 @@ impl LintMessage {
             } else {
                 "add a blank line after this table".to_string()
             }),
+            LintMessage::TableColumnStyle { expected } => Some(format!("use {expected} column style for this table")),
         }
     }
 }
@@ -812,6 +821,9 @@ impl fmt::Display for LintMessage {
                     "table is missing a blank line {}",
                     if *above { "before it" } else { "after it" }
                 )
+            }
+            LintMessage::TableColumnStyle { expected } => {
+                write!(f, "table column style should be {expected}")
             }
         }
     }
