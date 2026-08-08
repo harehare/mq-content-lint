@@ -116,6 +116,51 @@ impl<'a> LineByteIndex<'a> {
             None
         }
     }
+
+    /// Converts an `mq_markdown::Position`'s 1-based column — which counts UTF-8 *bytes*, not
+    /// `char`s, unlike every other column this crate computes by scanning raw line text — into
+    /// the char-counted column [`Self::byte_offset`] (and everything built on it: [`Range`],
+    /// [`crate::fix::slice`]) expects. A rule that reads `position.start.column`/`.end.column`
+    /// must convert through this before combining it with a char-counted offset or constructing a
+    /// `Range` from it, or the two conventions silently misalign on any line with multi-byte
+    /// characters — landing mid-character and panicking once something tries to slice there.
+    pub(crate) fn char_column(&self, line: usize, byte_column: usize) -> Option<usize> {
+        let index = line.checked_sub(1)?;
+        let &(_, line_text) = self.lines.get(index)?;
+        let byte_offset = byte_column.checked_sub(1)?;
+        if byte_offset == line_text.len() {
+            return Some(line_text.chars().count() + 1);
+        }
+        if byte_offset > line_text.len() || !line_text.is_char_boundary(byte_offset) {
+            return None;
+        }
+        Some(line_text[..byte_offset].chars().count() + 1)
+    }
+}
+
+#[cfg(test)]
+mod line_byte_index_tests {
+    use super::*;
+
+    #[test]
+    fn char_column_converts_byte_based_ast_columns_on_multi_byte_lines() {
+        let source = "` 従うように `\n";
+        let index = LineByteIndex::new(source);
+        // Byte length of the line (no trailing newline) is 19, so mq_markdown's own byte-based
+        // convention reports the code span's end column as 20 (one past the last byte) — see
+        // `no_space_in_code`'s doc comment for how this was discovered.
+        assert_eq!(index.char_column(1, 1), Some(1));
+        assert_eq!(index.char_column(1, 20), Some(10));
+    }
+
+    #[test]
+    fn char_column_matches_byte_offset_on_pure_ascii_lines() {
+        let source = "hello world\n";
+        let index = LineByteIndex::new(source);
+        for column in 1..=12 {
+            assert_eq!(index.char_column(1, column), Some(column));
+        }
+    }
 }
 
 #[cfg(test)]

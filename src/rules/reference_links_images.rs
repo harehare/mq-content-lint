@@ -7,6 +7,12 @@
 //! *did* resolve is already a `LinkRef`/`ImageRef` node, not `Text`, so it's naturally excluded.
 //! The bare shortcut form `[text]` (no second bracket) is intentionally not checked here: it's
 //! indistinguishable from ordinary bracketed prose without much higher false-positive risk.
+//!
+//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s — see
+//! [`super::no_space_in_code`]'s doc comment — so `position.start.column` is converted through
+//! [`crate::text::LineByteIndex::char_column`] before it's combined with
+//! `find_reference_patterns`'s char-counted offsets, or the two would silently misalign on text
+//! containing multi-byte characters.
 
 use mq_markdown::Node;
 
@@ -72,7 +78,8 @@ impl Rule for ReferenceLinksImages {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(&self, doc: &mq_markdown::Markdown, source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+        let byte_index = crate::text::LineByteIndex::new(source);
         let mut diagnostics = Vec::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Text(text) = node else { return };
@@ -80,12 +87,11 @@ impl Rule for ReferenceLinksImages {
             if position.start.line != position.end.line {
                 return;
             }
+            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+                return;
+            };
             for (start, end, label) in find_reference_patterns(&text.value) {
-                let range = Range::single_line(
-                    position.start.line,
-                    position.start.column + start,
-                    position.start.column + end,
-                );
+                let range = Range::single_line(position.start.line, start_column + start, start_column + end);
                 diagnostics.push(
                     Diagnostic::new(LintMessage::ReferenceLinksImages { label }, self.default_severity())
                         .with_range(range),
@@ -126,5 +132,17 @@ mod tests {
     fn flags_an_undefined_collapsed_reference() {
         let diagnostics = run("[missing][]\n");
         assert_eq!(diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn flags_an_undefined_reference_after_multi_byte_text() {
+        let diagnostics = run("従うように、[text][missing]\n");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message,
+            LintMessage::ReferenceLinksImages {
+                label: "missing".to_string()
+            }
+        );
     }
 }
