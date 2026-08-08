@@ -90,7 +90,20 @@ follow the errors if you lose track of a step.
    `all_rules_matches_rule_id_all` test enforces the two lists stay in lockstep).
 
 4. **`README.md`** — add a row to the relevant category table under **Built-in rules** (Rule ID,
-   `MDxxx`, default severity, whether it has a fix, one-line description).
+   `MDxxx`, default severity, whether it has a fix, one-line description). Check the new row's
+   own line length and the diagnostic count (`mq-content-lint README.md`) before and after —
+   README's rule tables are the one place this crate documents its own bad-pattern examples
+   (`` `(text)[url]` ``, a literal `TODO`, ...) in backticks, so a rule whose selector matches
+   plain text can fire on its own documentation. **Never run `--fix`/`--diff` against
+   `README.md`** to "clean up" anything it flags — every rule capable of firing on that page has
+   already been checked against it once; a fix pass will happily rewrite an illustrative example
+   into nonsense (a real incident: an early draft of MD060 auto-"fixed" the `no_reversed_links`
+   row's own `` `(text)[url]` `` example into `` `[text](url)` ``, and the `no_todo` custom rule in
+   this repo's own `mq-content-lint.toml` turned a `TODO`-detection example into `DONE`). If a new
+   rule flags README lines that turn out to need a real edit, make that edit by hand and re-run
+   `mq-content-lint README.md` to confirm the diagnostic is gone before moving on — if it isn't
+   real, it usually means the rule's design needs a second look (see the compact-style empty-cell
+   case in `table_column_style.rs`'s history), not that the README needs to change.
 
 5. Run the full check before opening a PR:
    ```sh

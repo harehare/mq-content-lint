@@ -441,6 +441,7 @@ project-specific one is usually a better fit as a [custom rule](#custom-rules) t
 | `table_pipe_style` | MD055 | warning | ✓ | Leading/trailing `\|` consistency. |
 | `table_column_count` | MD056 | warning | | A row with more/fewer cells than the header. |
 | `blanks_around_tables` | MD058 | warning | ✓ | A table not surrounded by blank lines. |
+| `table_column_style` | MD060 | warning | ✓ | Padding around `\|` (see `--explain`). |
 
 ### Front matter
 
