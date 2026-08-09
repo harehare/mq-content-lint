@@ -5,8 +5,8 @@
 
 **Lint Markdown content with [mq](https://github.com/harehare/mq) queries.**
 
+[![ci](https://img.shields.io/github/actions/workflow/status/harehare/mq-content-lint/ci.yml?style=flat-square&logo=github-actions&label=ci)](https://github.com/harehare/mq-content-lint/actions/workflows/ci.yml)
 [![LICENCE](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
-[![built on mq](https://img.shields.io/badge/built%20on-mq-orange.svg?style=flat-square)](https://github.com/harehare/mq)
 
 </div>
 
