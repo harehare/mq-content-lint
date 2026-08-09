@@ -2,10 +2,10 @@ name: VS Code Extension
 
 on:
   push:
-    branches: ["claude/mq-content-lint-command-ed419l"]
+    branches: ["main"]
     paths: ["editors/vscode/**", ".github/workflows/vscode-extension.yml"]
   pull_request:
-    branches: ["claude/mq-content-lint-command-ed419l"]
+    branches: ["main"]
     paths: ["editors/vscode/**", ".github/workflows/vscode-extension.yml"]
 
 permissions:
@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/claude/mq-content-lint-command-ed419l' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 defaults:
   run:

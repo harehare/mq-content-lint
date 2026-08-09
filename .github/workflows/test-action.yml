@@ -2,10 +2,10 @@ name: Test Action
 
 on:
   push:
-    branches: ["claude/mq-content-lint-command-ed419l"]
+    branches: ["main"]
     paths: ["action.yml", ".github/workflows/test-action.yml", "src/**", "Cargo.toml", "Cargo.lock"]
   pull_request:
-    branches: ["claude/mq-content-lint-command-ed419l"]
+    branches: ["main"]
     paths: ["action.yml", ".github/workflows/test-action.yml", "src/**", "Cargo.toml", "Cargo.lock"]
 
 permissions:
@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/claude/mq-content-lint-command-ed419l' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
