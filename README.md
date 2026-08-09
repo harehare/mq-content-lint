@@ -1,5 +1,10 @@
 # mq-content-lint
 
+**Lint Markdown content with [mq](https://github.com/harehare/mq) queries.**
+
+[![LICENCE](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+[![built on mq](https://img.shields.io/badge/built%20on-mq-orange.svg?style=flat-square)](https://github.com/harehare/mq)
+
 A content linter for Markdown, built on [mq](https://github.com/harehare/mq)'s `mq-markdown`
 AST — the same document model mq's own query engine and `mq-lint` use. `mq-content-lint` checks
 the *content* of a document — heading structure, list and table consistency, whitespace,
@@ -7,6 +12,24 @@ link/image hygiene, required front matter — with coverage roughly equivalent t
 [markdownlint](https://github.com/DavidAnson/markdownlint)'s rule set. It's a separate tool from
 [`mq-lint`](https://github.com/harehare/mq/tree/main/crates/mq-lint), which lints `.mq` query
 scripts, not Markdown content.
+
+> [!IMPORTANT]
+> This project is under active development.
+
+## Why mq-content-lint?
+
+- **Custom rules without writing Rust**: house style rules, required disclaimers, "no TODO left
+  in shipped docs" — express them as [mq](https://github.com/harehare/mq) queries in config
+  instead of forking a linter. Neither markdownlint nor rumdl offer this.
+- **CI quality gates**: `sarif`/`rdjson` output plugs straight into GitHub code scanning or
+  [reviewdog](https://github.com/reviewdog/reviewdog) PR annotations; a non-zero exit code on any
+  diagnostic at or above `--min-severity` makes it a drop-in CI check.
+- **Live editor feedback**: the bundled LSP server gives hover text, diagnostics, and quick fixes
+  as you type, instead of only catching issues at commit or CI time.
+- **Migrating from markdownlint**: rule-for-rule coverage of markdownlint's checks, plus the
+  ability to express project-specific rules that markdownlint's plugin API can't.
+- **Cleaning up LLM-generated Markdown**: docs and READMEs increasingly start as LLM output;
+  `--fix` normalizes heading structure, whitespace, and link/list formatting in one pass.
 
 ## Features
 
@@ -22,7 +45,7 @@ scripts, not Markdown content.
 - **A composite GitHub Action**, a **pre-commit hook**, and an **LSP server**
   (`mq-content-lint-lsp`) for live editor diagnostics and quick fixes.
 
-## Install
+## Installation
 
 ```bash
 cargo install mq-content-lint
@@ -30,6 +53,26 @@ cargo install mq-content-lint
 # Also want the language server? See "Editors" below.
 cargo install mq-content-lint --features lsp
 ```
+
+<details>
+<summary>Building from source</summary>
+
+```sh
+git clone https://github.com/harehare/mq-content-lint.git
+cd mq-content-lint
+cargo install --path . --features lsp
+```
+
+</details>
+
+## Editor & CI Integrations
+
+| Integration    | Notes                                                                    |
+| -------------- | ------------------------------------------------------------------------- |
+| VS Code        | [Extension source](./editors/vscode) — not yet on the Marketplace, run it from source |
+| LSP (any editor) | Point a generic LSP client at `mq-content-lint-lsp` for Markdown files |
+| GitHub Actions | Composite action — see below                                            |
+| pre-commit     | `mq-content-lint` / `mq-content-lint-fix` hooks — see below              |
 
 ## Usage
 
@@ -177,12 +220,21 @@ message = "more than one top-level heading in this document"
 severity = "error"
 ```
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for details on adding a new built-in rule instead.
-
 ## Non-goals
 
 - **Natural-language spelling/style checking** (a Vale-style prose linter) is out of scope.
 
+## Support
+
+- 🐛 [Report bugs](https://github.com/harehare/mq-content-lint/issues/new)
+- 💡 [Request features](https://github.com/harehare/mq-content-lint/issues/new)
+- ⭐ [Star the project](https://github.com/harehare/mq-content-lint) if you find it useful!
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the difference between a
+built-in rule and a [custom rule](#custom-rules), and the steps for adding a new built-in rule.
+
 ## License
 
-MIT
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
