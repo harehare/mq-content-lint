@@ -1,14 +1,19 @@
-# mq-content-lint
+<div align="center">
+  <img src="assets/logo.svg" style="width: 128px; height: 128px;"/>
+
+<h1>mq-content-lint</h1>
 
 **Lint Markdown content with [mq](https://github.com/harehare/mq) queries.**
 
 [![LICENCE](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![built on mq](https://img.shields.io/badge/built%20on-mq-orange.svg?style=flat-square)](https://github.com/harehare/mq)
 
+</div>
+
 A content linter for Markdown, built on [mq](https://github.com/harehare/mq)'s `mq-markdown`
-AST — the same document model mq's own query engine and `mq-lint` use. `mq-content-lint` checks
-the *content* of a document — heading structure, list and table consistency, whitespace,
-link/image hygiene, required front matter — with coverage roughly equivalent to
+AST, the same document model mq's own query engine and `mq-lint` use. `mq-content-lint` checks
+the *content* of a document: heading structure, list and table consistency, whitespace,
+link/image hygiene, required front matter, with coverage roughly equivalent to
 [markdownlint](https://github.com/DavidAnson/markdownlint)'s rule set. It's a separate tool from
 [`mq-lint`](https://github.com/harehare/mq/tree/main/crates/mq-lint), which lints `.mq` query
 scripts, not Markdown content.
@@ -19,8 +24,8 @@ scripts, not Markdown content.
 ## Why mq-content-lint?
 
 - **Custom rules without writing Rust**: house style rules, required disclaimers, "no TODO left
-  in shipped docs" — express them as [mq](https://github.com/harehare/mq) queries in config
-  instead of forking a linter. Neither markdownlint nor rumdl offer this.
+  in shipped docs", expressed as [mq](https://github.com/harehare/mq) queries in config instead
+  of forking a linter. Neither markdownlint nor rumdl offer this.
 - **CI quality gates**: `sarif`/`rdjson` output plugs straight into GitHub code scanning or
   [reviewdog](https://github.com/reviewdog/reviewdog) PR annotations; a non-zero exit code on any
   diagnostic at or above `--min-severity` makes it a drop-in CI check.
@@ -34,8 +39,8 @@ scripts, not Markdown content.
 ## Features
 
 - **54 built-in rules** covering headings, lists, whitespace, code blocks, links/images, inline
-  formatting, tables, and front matter — see `--list-rules` and `--explain <rule-id>`.
-- **Custom rules as [mq](https://github.com/harehare/mq) queries** — define project-specific
+  formatting, tables, and front matter. See `--list-rules` and `--explain <rule-id>`.
+- **Custom rules as [mq](https://github.com/harehare/mq) queries**: define project-specific
   checks in config without writing Rust, the one thing neither markdownlint nor rumdl offer.
 - **Autofix** via `--fix`, a dry-run diff via `--diff`, and `--watch` to re-lint on save.
 - **Cascading TOML config** (like ESLint's), `.editorconfig` integration, `.gitignore`-aware
@@ -69,15 +74,15 @@ cargo install --path . --features lsp
 
 | Integration    | Notes                                                                    |
 | -------------- | ------------------------------------------------------------------------- |
-| VS Code        | [Extension source](./editors/vscode) — not yet on the Marketplace, run it from source |
+| VS Code        | [Extension source](./editors/vscode), not yet on the Marketplace, run it from source |
 | LSP (any editor) | Point a generic LSP client at `mq-content-lint-lsp` for Markdown files |
-| GitHub Actions | Composite action — see below                                            |
-| pre-commit     | `mq-content-lint` / `mq-content-lint-fix` hooks — see below              |
+| GitHub Actions | Composite action (see below)                                             |
+| pre-commit     | `mq-content-lint` / `mq-content-lint-fix` hooks (see below)              |
 
 ## Usage
 
 ```bash
-# Write a starter mq-content-lint.toml (everything commented out — see Configuration)
+# Write a starter mq-content-lint.toml (everything commented out, see Configuration)
 mq-content-lint --init
 
 # Lint a file, a directory (recursively), or stdin
@@ -108,7 +113,7 @@ CI.
 
 `--fix` applies every diagnostic with a machine-applicable rewrite, then re-lints and re-fixes
 automatically if that exposed a new issue, repeating up to 10 times until a pass makes no further
-change. Not every rule can auto-fix — see `--list-rules`'s "Fix?" column or `--explain
+change. Not every rule can auto-fix; see `--list-rules`'s "Fix?" column or `--explain
 <rule-id>`'s `fixable:` line.
 
 ### GitHub Actions
@@ -139,14 +144,14 @@ repos:
 `mq-content-lint-lsp` (installed via `cargo install mq-content-lint --features lsp`) is a
 [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) server: live
 diagnostics, hover text, and quick-fix code actions in any LSP-capable editor. A [VS Code
-extension](./editors/vscode) built on it ships in this repo (not yet on the Marketplace — run it
+extension](./editors/vscode) built on it ships in this repo (not yet on the Marketplace, run it
 from source). Other editors can point their generic LSP client at the `mq-content-lint-lsp`
 binary for Markdown files.
 
 ## Configuration
 
-Drop a `mq-content-lint.toml` file in (or above) the directory you run `mq-content-lint` from —
-it's discovered automatically by walking up from the current directory, the same way
+Drop a `mq-content-lint.toml` file in (or above) the directory you run `mq-content-lint` from.
+It's discovered automatically by walking up from the current directory, the same way
 `.eslintrc`/`pyproject.toml` are. Config files **cascade**: every `mq-content-lint.toml` found up
 to the filesystem root is loaded and layered, closer files winning over farther ones.
 
@@ -190,7 +195,7 @@ See https://example.com for details.
 
 ## Custom rules
 
-A config file can define its own rules as [mq](https://github.com/harehare/mq) queries — every
+A config file can define its own rules as [mq](https://github.com/harehare/mq) queries: every
 node a query selects becomes a diagnostic at that node's position, merged into the same report as
 the built-ins:
 
@@ -200,7 +205,7 @@ id = "no_todo"
 query = 'select(contains(to_text(), "TODO"))'
 message = "found a TODO marker"
 severity = "warning"              # optional, defaults to "warning"
-fix = 'replace("TODO", "DONE")'   # optional — makes the rule autofixable
+fix = 'replace("TODO", "DONE")'   # optional, makes the rule autofixable
 ```
 
 `query` runs once per top-level node by default. For a document-wide check (counting duplicate
