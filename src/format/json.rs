@@ -8,10 +8,10 @@ use mq_content_lint::report_item::ReportItem;
 /// no single corresponding mq selector) — there's no other field distinguishing a custom rule's
 /// diagnostic from a built-in's; matching `ruleId` against `mq-content-lint --list-rules`'
 /// output is the way to tell.
-pub(super) fn write_json_report(w: &mut impl Write, results: &[(String, Vec<ReportItem>)]) -> io::Result<()> {
+pub(super) fn write_json_report(w: &mut impl Write, results: &[(String, String, Vec<ReportItem>)]) -> io::Result<()> {
     let report: Vec<serde_json::Value> = results
         .iter()
-        .map(|(file_label, items)| {
+        .map(|(file_label, _source, items)| {
             let diagnostics: Vec<serde_json::Value> = items
                 .iter()
                 .map(|item| {
@@ -63,7 +63,7 @@ mod tests {
             .into_iter()
             .map(ReportItem::from)
             .collect();
-        let results = vec![("test.md".to_string(), items)];
+        let results = vec![("test.md".to_string(), source.to_string(), items)];
 
         let mut buf = Vec::new();
         write_json_report(&mut buf, &results).unwrap();
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn test_write_json_report_empty_diagnostics() {
-        let results: Vec<(String, Vec<ReportItem>)> = vec![("test.md".to_string(), Vec::new())];
+        let results: Vec<(String, String, Vec<ReportItem>)> = vec![("test.md".to_string(), String::new(), Vec::new())];
         let mut buf = Vec::new();
         write_json_report(&mut buf, &results).unwrap();
         let json: serde_json::Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
@@ -95,7 +95,7 @@ mod tests {
             range: None,
             fix: None,
         });
-        let results = vec![("test.md".to_string(), vec![item])];
+        let results = vec![("test.md".to_string(), String::new(), vec![item])];
         let mut buf = Vec::new();
         write_json_report(&mut buf, &results).unwrap();
         let json: serde_json::Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();

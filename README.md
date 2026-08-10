@@ -46,7 +46,8 @@ scripts, not Markdown content.
 - **Cascading TOML config** (like ESLint's), `.editorconfig` integration, `.gitignore`-aware
   directory scanning, and inline `<!-- mq-content-lint-disable ... -->` comments.
 - **Machine-readable output**: `json`, `sarif` (GitHub code scanning), and `rdjson` (for
-  [reviewdog](https://github.com/reviewdog/reviewdog) inline PR suggestions).
+  [reviewdog](https://github.com/reviewdog/reviewdog) inline PR suggestions); `markdown` for a
+  table you can drop straight into a PR description or comment.
 - **A composite GitHub Action**, a **pre-commit hook**, and an **LSP server**
   (`mq-content-lint-lsp`) for live editor diagnostics and quick fixes.
 
@@ -100,6 +101,7 @@ mq-content-lint --watch docs/
 # Machine-readable output
 mq-content-lint --format json docs/ > report.json
 mq-content-lint --format sarif docs/ > report.sarif
+mq-content-lint --format markdown docs/ > report.md
 
 # Inspect the rule set
 mq-content-lint --list-rules

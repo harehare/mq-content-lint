@@ -8,10 +8,10 @@ use mq_content_lint::report_item::ReportItem;
 /// Writes a single SARIF 2.1.0 log document covering every linted file.
 ///
 /// See <https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/sarif-v2.1.0-os.html>.
-pub(super) fn write_sarif_report(w: &mut impl Write, results: &[(String, Vec<ReportItem>)]) -> io::Result<()> {
+pub(super) fn write_sarif_report(w: &mut impl Write, results: &[(String, String, Vec<ReportItem>)]) -> io::Result<()> {
     let sarif_results: Vec<serde_json::Value> = results
         .iter()
-        .flat_map(|(file_label, items)| {
+        .flat_map(|(file_label, _source, items)| {
             items.iter().map(move |item| {
                 let mut physical_location = serde_json::json!({
                     "artifactLocation": {"uri": file_label},
@@ -53,7 +53,7 @@ pub(super) fn write_sarif_report(w: &mut impl Write, results: &[(String, Vec<Rep
         .collect();
     let custom_rule_ids: BTreeSet<&str> = results
         .iter()
-        .flat_map(|(_, items)| items.iter())
+        .flat_map(|(_, _source, items)| items.iter())
         .filter(|item| matches!(item, ReportItem::Custom(_)))
         .map(|item| item.rule_id())
         .collect();
@@ -110,7 +110,7 @@ mod tests {
     fn test_write_sarif_report_produces_valid_sarif_shape() {
         let items = sample_items();
         assert!(!items.is_empty());
-        let results = vec![("test.md".to_string(), items)];
+        let results = vec![("test.md".to_string(), "![](missing-alt.png)\n".to_string(), items)];
 
         let mut buf = Vec::new();
         write_sarif_report(&mut buf, &results).unwrap();
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_write_sarif_report_empty_diagnostics() {
-        let results: Vec<(String, Vec<ReportItem>)> = vec![("test.md".to_string(), Vec::new())];
+        let results: Vec<(String, String, Vec<ReportItem>)> = vec![("test.md".to_string(), String::new(), Vec::new())];
         let mut buf = Vec::new();
         write_sarif_report(&mut buf, &results).unwrap();
         let json: serde_json::Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();
@@ -154,7 +154,7 @@ mod tests {
             range: None,
             fix: None,
         });
-        let results = vec![("test.md".to_string(), vec![item])];
+        let results = vec![("test.md".to_string(), String::new(), vec![item])];
         let mut buf = Vec::new();
         write_sarif_report(&mut buf, &results).unwrap();
         let json: serde_json::Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();

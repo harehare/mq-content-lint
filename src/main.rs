@@ -205,7 +205,7 @@ fn run() -> io::Result<bool> {
 
         let diagnostics = lint_content(&content, &linter, &config, min_severity)?;
         let had_diagnostics = !diagnostics.is_empty();
-        format::write_report(&mut w, cli.format, &[("<stdin>".to_string(), diagnostics)])?;
+        format::write_report(&mut w, cli.format, &[("<stdin>".to_string(), content, diagnostics)])?;
         return Ok(had_diagnostics);
     }
 
@@ -272,7 +272,10 @@ fn lint_files(
     }
 
     let had_diagnostics = outcomes.iter().any(|o| !o.diagnostics.is_empty());
-    let results: Vec<(String, Vec<ReportItem>)> = outcomes.into_iter().map(|o| (o.label, o.diagnostics)).collect();
+    let results: Vec<(String, String, Vec<ReportItem>)> = outcomes
+        .into_iter()
+        .map(|o| (o.label, o.source, o.diagnostics))
+        .collect();
     format::write_report(w, cli.format, &results)?;
 
     Ok(had_diagnostics)
@@ -284,6 +287,10 @@ fn lint_files(
 /// `fix_count`/`diff` is ever set, since `--fix` and `--diff` don't write in the same run.
 struct FileOutcome {
     label: String,
+    /// The text `diagnostics` was computed against (the fixed text when `--fix` changed
+    /// something, the original otherwise) — what the `Text` report's snippets are drawn from.
+    /// Left empty when `diff` is set, since that branch never reports diagnostics.
+    source: String,
     diagnostics: Vec<ReportItem>,
     fix_count: Option<usize>,
     diff: Option<String>,
@@ -316,26 +323,27 @@ fn process_file(
         let file_diff = (fixed != original).then(|| compute_diff(&label, &original, &fixed));
         return Ok(FileOutcome {
             label,
+            source: String::new(),
             diagnostics: Vec::new(),
             fix_count: None,
             diff: file_diff,
         });
     }
 
-    let (fix_count, items) = if fix {
+    let (source, fix_count, items) = if fix {
         let (fixed, count, items) = fix_source(&original, linter, config)
             .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
         if fixed == original {
-            (None, items)
+            (fixed, None, items)
         } else {
             std::fs::write(path, &fixed)
                 .map_err(|e| io::Error::other(format!("writing file {}: {}", path.display(), e)))?;
-            (Some(count), items)
+            (fixed, Some(count), items)
         }
     } else {
         let items = lint_items(&original, linter, config)
             .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
-        (None, items)
+        (original, None, items)
     };
 
     let diagnostics = items
@@ -345,6 +353,7 @@ fn process_file(
 
     Ok(FileOutcome {
         label,
+        source,
         diagnostics,
         fix_count,
         diff: None,
@@ -1058,6 +1067,7 @@ mod tests {
     #[case(vec!["mq-content-lint"], OutputFormat::Text)]
     #[case(vec!["mq-content-lint", "--format", "text"], OutputFormat::Text)]
     #[case(vec!["mq-content-lint", "--format", "json"], OutputFormat::Json)]
+    #[case(vec!["mq-content-lint", "--format", "markdown"], OutputFormat::Markdown)]
     #[case(vec!["mq-content-lint", "--format", "sarif"], OutputFormat::Sarif)]
     #[case(vec!["mq-content-lint", "--format", "rdjson"], OutputFormat::Rdjson)]
     fn test_cli_format(#[case] args: Vec<&str>, #[case] expected: OutputFormat) {

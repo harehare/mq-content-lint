@@ -8,10 +8,10 @@ use mq_content_lint::report_item::ReportItem;
 /// post diagnostics as inline PR review comments (`-reporter=github-pr-review`) instead of a
 /// flat CI log. A diagnostic with a [`mq_content_lint::Fix`] carries it as an RDJSON
 /// `suggestion`, which reviewdog can offer as a one-click GitHub suggested change.
-pub(super) fn write_rdjson_report(w: &mut impl Write, results: &[(String, Vec<ReportItem>)]) -> io::Result<()> {
+pub(super) fn write_rdjson_report(w: &mut impl Write, results: &[(String, String, Vec<ReportItem>)]) -> io::Result<()> {
     let diagnostics: Vec<serde_json::Value> = results
         .iter()
-        .flat_map(|(file_label, items)| {
+        .flat_map(|(file_label, _source, items)| {
             items.iter().map(move |item| {
                 let mut location = serde_json::json!({"path": file_label});
                 if let Some(range) = item.range() {
@@ -87,7 +87,7 @@ mod tests {
     fn test_write_rdjson_report_produces_valid_shape() {
         let items = sample_items();
         assert!(!items.is_empty());
-        let results = vec![("test.md".to_string(), items)];
+        let results = vec![("test.md".to_string(), "#Title\n".to_string(), items)];
 
         let mut buf = Vec::new();
         write_rdjson_report(&mut buf, &results).unwrap();
@@ -116,7 +116,7 @@ mod tests {
             range: None,
             fix: None,
         });
-        let results = vec![("test.md".to_string(), vec![item])];
+        let results = vec![("test.md".to_string(), String::new(), vec![item])];
 
         let mut buf = Vec::new();
         write_rdjson_report(&mut buf, &results).unwrap();
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_write_rdjson_report_empty_diagnostics() {
-        let results: Vec<(String, Vec<ReportItem>)> = vec![("test.md".to_string(), Vec::new())];
+        let results: Vec<(String, String, Vec<ReportItem>)> = vec![("test.md".to_string(), String::new(), Vec::new())];
         let mut buf = Vec::new();
         write_rdjson_report(&mut buf, &results).unwrap();
         let json: serde_json::Value = serde_json::from_str(&String::from_utf8(buf).unwrap()).unwrap();

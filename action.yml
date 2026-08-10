@@ -21,7 +21,7 @@ inputs:
     required: false
     default: 'false'
   format:
-    description: 'Output format: text, json, sarif, or rdjson (for reviewdog).'
+    description: 'Output format: text, json, markdown, sarif, or rdjson (for reviewdog).'
     required: false
     default: 'text'
   min-severity:

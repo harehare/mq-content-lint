@@ -8,8 +8,10 @@ use mq_content_lint::report_item::ReportItem;
 /// Severities in the order categories are displayed, most severe first.
 const SEVERITY_ORDER: [Severity; 3] = [Severity::Error, Severity::Warning, Severity::Info];
 
-/// Writes `items` grouped by severity and returns `true` if any were reported.
-pub(super) fn write_text_report(w: &mut impl Write, file_label: &str, items: &[ReportItem]) -> io::Result<bool> {
+/// Writes `items` grouped by severity in a Credo-style report and returns `true` if any were
+/// reported. `code` is the source text `items` was computed against — used to render a snippet
+/// with a caret under each diagnostic's range.
+pub(super) fn write_text_report(w: &mut impl Write, file_label: &str, code: &str, items: &[ReportItem]) -> io::Result<bool> {
     let mut printed_category = false;
     for severity in SEVERITY_ORDER {
         let group: Vec<&ReportItem> = items.iter().filter(|d| d.severity() == severity).collect();
@@ -20,7 +22,7 @@ pub(super) fn write_text_report(w: &mut impl Write, file_label: &str, items: &[R
             writeln!(w)?;
         }
         printed_category = true;
-        write_category(w, severity, &group, file_label)?;
+        write_category(w, severity, &group, file_label, code)?;
     }
 
     if items.is_empty() {
@@ -41,35 +43,40 @@ pub(super) fn write_text_report(w: &mut impl Write, file_label: &str, items: &[R
 /// Maps a severity to its category title and one-letter marker.
 fn severity_category(severity: Severity) -> (colored::ColoredString, colored::ColoredString) {
     match severity {
-        Severity::Error => ("## Errors".bright_red().bold(), "[E]".bright_red().bold()),
-        Severity::Warning => ("## Warnings".bright_yellow().bold(), "[W]".bright_yellow().bold()),
-        Severity::Info => ("## Info".blue().bold(), "[I]".blue().bold()),
+        Severity::Error => ("Errors".bright_red().bold(), "[E]".bright_red().bold()),
+        Severity::Warning => ("Warnings".bright_yellow().bold(), "[W]".bright_yellow().bold()),
+        Severity::Info => ("Info".blue().bold(), "[I]".blue().bold()),
     }
 }
 
-fn severity_bar(severity: Severity) -> colored::ColoredString {
+/// Colors `s` to match `severity`, shared by the box frame, gutter bar, message text, and the
+/// snippet's caret.
+fn severity_color(severity: Severity, s: &str) -> colored::ColoredString {
     match severity {
-        Severity::Error => "|".bright_red(),
-        Severity::Warning => "|".bright_yellow(),
-        Severity::Info => "|".blue(),
+        Severity::Error => s.bright_red(),
+        Severity::Warning => s.bright_yellow(),
+        Severity::Info => s.blue(),
     }
 }
 
-/// Writes one severity category: a heading followed by its diagnostics, each as a
-/// `[X] message` line with the `file:line:col .rule_id` location on the line below (a built-in
-/// rule's id is rendered with the mq selector it corresponds to, e.g. `.image` for
-/// `image_missing_alt`; a custom rule just shows its configured id).
-fn write_category(w: &mut impl Write, severity: Severity, items: &[&ReportItem], file_label: &str) -> io::Result<()> {
+/// Writes one severity category as a box-drawn frame (`┌─ Title` … `└─`) around its
+/// diagnostics, each as a `[X] message` line, a source snippet with a caret underline (when a
+/// range is known), then the `file:line:col rule_id` location (a built-in rule's id is followed
+/// by the mq selector it corresponds to, e.g. `image_missing_alt (.image)`; a custom rule just
+/// shows its configured id).
+fn write_category(w: &mut impl Write, severity: Severity, items: &[&ReportItem], file_label: &str, code: &str) -> io::Result<()> {
     let (title, letter) = severity_category(severity);
-    let bar = severity_bar(severity);
+    let bar = severity_color(severity, "│");
 
-    writeln!(w, "{}\n", title)?;
+    writeln!(w, "{} {title}", severity_color(severity, "┌─").bold())?;
+    writeln!(w, "{bar}")?;
 
     for (i, item) in items.iter().enumerate() {
-        match item.severity() {
-            Severity::Error => writeln!(w, "{bar} {} {}", letter, item.text().bright_red().bold())?,
-            Severity::Warning => writeln!(w, "{bar} {} {}", letter, item.text().bright_yellow().bold())?,
-            Severity::Info => writeln!(w, "{bar} {} {}", letter, item.text().blue().bold())?,
+        writeln!(w, "{bar} {} {}", letter, severity_color(item.severity(), &item.text()).bold())?;
+
+        if let Some(range) = item.range() {
+            writeln!(w, "{bar}")?;
+            write_snippet(w, code, &range, severity, &bar)?;
         }
 
         let loc = match item.range() {
@@ -91,7 +98,45 @@ fn write_category(w: &mut impl Write, severity: Severity, items: &[&ReportItem],
         }
     }
 
+    writeln!(w, "{}", severity_color(severity, "└─"))?;
+
     Ok(())
+}
+
+/// Writes the offending source line with a caret underline beneath it, colored to match
+/// `severity` and indented under the category's gutter `bar`.
+fn write_snippet(
+    w: &mut impl Write,
+    code: &str,
+    range: &mq_content_lint::Range,
+    severity: Severity,
+    bar: &colored::ColoredString,
+) -> io::Result<()> {
+    let lines: Vec<&str> = code.lines().collect();
+    let line_idx = range.start_line.saturating_sub(1);
+    let Some(source_line) = lines.get(line_idx) else {
+        return Ok(());
+    };
+
+    let col_start = range.start_column.saturating_sub(1);
+    let col_end = if range.end_line == range.start_line {
+        range.end_column.saturating_sub(1)
+    } else {
+        source_line.len()
+    };
+    let underline_len = col_end.saturating_sub(col_start).max(1);
+    let line_num = range.start_line.to_string();
+
+    writeln!(w, "{bar}    {} {} {}", line_num.dimmed(), "│".dimmed(), source_line)?;
+    writeln!(
+        w,
+        "{bar}    {} {} {}{}",
+        " ".repeat(line_num.len()),
+        "│".dimmed(),
+        " ".repeat(col_start),
+        severity_color(severity, &"^".repeat(underline_len)).bold(),
+    )?;
+    writeln!(w, "{bar}")
 }
 
 /// Writes the trailing summary line, e.g. `found 3 issues (2 errors, 1 warning).`
@@ -127,8 +172,12 @@ mod tests {
     use super::*;
     use mq_content_lint::{LintConfig, Linter};
 
+    fn sample_source() -> &'static str {
+        "![](missing-alt.png)\n"
+    }
+
     fn sample_items() -> Vec<ReportItem> {
-        let source = "![](missing-alt.png)\n";
+        let source = sample_source();
         let doc: mq_markdown::Markdown = source.parse().unwrap();
         let config = LintConfig::default();
         Linter::with_default_rules()
@@ -142,7 +191,7 @@ mod tests {
     #[test]
     fn test_write_text_report_no_issues() {
         let mut buf = Vec::new();
-        let had_diagnostics = write_text_report(&mut buf, "test.md", &[]).unwrap();
+        let had_diagnostics = write_text_report(&mut buf, "test.md", "", &[]).unwrap();
         assert!(!had_diagnostics);
         assert!(
             String::from_utf8(buf)
@@ -155,13 +204,25 @@ mod tests {
     fn test_write_text_report_with_diagnostics() {
         let items = sample_items();
         let mut buf = Vec::new();
-        let had_diagnostics = write_text_report(&mut buf, "test.md", &items).unwrap();
+        let had_diagnostics = write_text_report(&mut buf, "test.md", sample_source(), &items).unwrap();
         assert!(had_diagnostics);
 
         let output = String::from_utf8(buf).unwrap();
-        assert!(output.contains("## Errors"));
+        assert!(output.contains("┌─ Errors"));
+        assert!(output.contains("└─"));
         assert!(output.contains("test.md:1:1"));
         assert!(output.contains("found 1 issue (1 error)."));
+    }
+
+    #[test]
+    fn test_write_text_report_shows_snippet_with_caret() {
+        let items = sample_items();
+        let mut buf = Vec::new();
+        write_text_report(&mut buf, "test.md", sample_source(), &items).unwrap();
+
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("![](missing-alt.png)"));
+        assert!(output.contains('^'));
     }
 
     #[test]
@@ -174,7 +235,7 @@ mod tests {
             fix: None,
         });
         let mut buf = Vec::new();
-        write_text_report(&mut buf, "test.md", &[item]).unwrap();
+        write_text_report(&mut buf, "test.md", "", &[item]).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("found a TODO"));
         assert!(output.contains("no_todo"));
