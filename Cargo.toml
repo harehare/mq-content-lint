@@ -10,6 +10,7 @@ keywords = ["markdown", "lint", "static-analysis", "documentation"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/harehare/mq-content-lint"
+default-run = "mq-content-lint"
 
 [lib]
 name = "mq_content_lint"
@@ -33,8 +34,8 @@ colored = { version = "3.1.1", optional = true }
 ec4rs = "1.2.0"
 ignore = { version = "0.4.33", optional = true }
 miette = { version = "7.6.0", optional = true }
-mq-lang = "0.8.1"
-mq-markdown = { version = "0.8.1", features = ["json"] }
+mq-lang = "0.8.2"
+mq-markdown = { version = "0.8.2", features = ["json"] }
 notify = { version = "8.0.0", optional = true }
 rayon = { version = "1.12.0", optional = true }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -47,9 +48,6 @@ toml = "1.1.4"
 tower-lsp = { version = "0.20.0", optional = true }
 
 [features]
-# `cli` on by default so `cargo install mq-content-lint` installs the binary out of the box.
-# Library consumers who only want `mq_content_lint::Linter` etc. should depend on this crate with
-# `default-features = false` to skip the CLI's dependencies (clap, colored, ...) entirely.
 default = ["cli"]
 cli = [
     "dep:clap",
@@ -62,9 +60,6 @@ cli = [
     "dep:notify",
     "dep:ignore",
 ]
-# Opt-in (not part of `default`): `cargo install mq-content-lint --features lsp` installs both
-# the CLI and mq-content-lint-lsp; `--no-default-features --features lsp` installs only the LSP
-# server.
 lsp = ["dep:tokio", "dep:tower-lsp"]
 
 [dev-dependencies]

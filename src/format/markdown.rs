@@ -4,7 +4,10 @@ use mq_content_lint::report_item::ReportItem;
 
 /// Writes a GitHub-flavored Markdown table of diagnostics across every linted file, suitable for
 /// a PR description or comment.
-pub(super) fn write_markdown_report(w: &mut impl Write, results: &[(String, String, Vec<ReportItem>)]) -> io::Result<()> {
+pub(super) fn write_markdown_report(
+    w: &mut impl Write,
+    results: &[(String, String, Vec<ReportItem>)],
+) -> io::Result<()> {
     let issue_count: usize = results.iter().map(|(_, _source, items)| items.len()).sum();
 
     writeln!(w, "# mq-content-lint Report")?;

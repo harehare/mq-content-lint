@@ -11,7 +11,12 @@ const SEVERITY_ORDER: [Severity; 3] = [Severity::Error, Severity::Warning, Sever
 /// Writes `items` grouped by severity in a Credo-style report and returns `true` if any were
 /// reported. `code` is the source text `items` was computed against — used to render a snippet
 /// with a caret under each diagnostic's range.
-pub(super) fn write_text_report(w: &mut impl Write, file_label: &str, code: &str, items: &[ReportItem]) -> io::Result<bool> {
+pub(super) fn write_text_report(
+    w: &mut impl Write,
+    file_label: &str,
+    code: &str,
+    items: &[ReportItem],
+) -> io::Result<bool> {
     let mut printed_category = false;
     for severity in SEVERITY_ORDER {
         let group: Vec<&ReportItem> = items.iter().filter(|d| d.severity() == severity).collect();
@@ -64,7 +69,13 @@ fn severity_color(severity: Severity, s: &str) -> colored::ColoredString {
 /// range is known), then the `file:line:col rule_id` location (a built-in rule's id is followed
 /// by the mq selector it corresponds to, e.g. `image_missing_alt (.image)`; a custom rule just
 /// shows its configured id).
-fn write_category(w: &mut impl Write, severity: Severity, items: &[&ReportItem], file_label: &str, code: &str) -> io::Result<()> {
+fn write_category(
+    w: &mut impl Write,
+    severity: Severity,
+    items: &[&ReportItem],
+    file_label: &str,
+    code: &str,
+) -> io::Result<()> {
     let (title, letter) = severity_category(severity);
     let bar = severity_color(severity, "│");
 
@@ -72,7 +83,12 @@ fn write_category(w: &mut impl Write, severity: Severity, items: &[&ReportItem],
     writeln!(w, "{bar}")?;
 
     for (i, item) in items.iter().enumerate() {
-        writeln!(w, "{bar} {} {}", letter, severity_color(item.severity(), &item.text()).bold())?;
+        writeln!(
+            w,
+            "{bar} {} {}",
+            letter,
+            severity_color(item.severity(), &item.text()).bold()
+        )?;
 
         if let Some(range) = item.range() {
             writeln!(w, "{bar}")?;
