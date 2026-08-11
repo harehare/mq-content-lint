@@ -6,7 +6,7 @@
 **Lint Markdown content with [mq](https://github.com/harehare/mq) queries.**
 
 [![ci](https://img.shields.io/github/actions/workflow/status/harehare/mq-content-lint/ci.yml?style=flat-square&logo=github-actions&label=ci)](https://github.com/harehare/mq-content-lint/actions/workflows/ci.yml)
-[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/harehare.mq-content-lint?style=flat-square&logo=visualstudiocode&label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=harehare.mq-content-lint)
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC?style=flat-square&logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=harehare.mq-content-lint)
 [![LICENCE](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 
 </div>
