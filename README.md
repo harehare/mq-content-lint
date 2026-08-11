@@ -6,6 +6,7 @@
 **Lint Markdown content with [mq](https://github.com/harehare/mq) queries.**
 
 [![ci](https://img.shields.io/github/actions/workflow/status/harehare/mq-content-lint/ci.yml?style=flat-square&logo=github-actions&label=ci)](https://github.com/harehare/mq-content-lint/actions/workflows/ci.yml)
+[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/harehare.mq-content-lint?style=flat-square&logo=visualstudiocode&label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=harehare.mq-content-lint)
 [![LICENCE](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 
 </div>
@@ -75,7 +76,7 @@ cargo install --path . --features lsp
 
 | Integration    | Notes                                                                    |
 | -------------- | ------------------------------------------------------------------------- |
-| VS Code        | [Extension source](./editors/vscode), not yet on the Marketplace, run it from source |
+| VS Code        | [Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.mq-content-lint) / [Extension source](./editors/vscode) |
 | LSP (any editor) | Point a generic LSP client at `mq-content-lint-lsp` for Markdown files |
 | GitHub Actions | Composite action (see below)                                             |
 | pre-commit     | `mq-content-lint` / `mq-content-lint-fix` hooks (see below)              |
@@ -146,9 +147,9 @@ repos:
 `mq-content-lint-lsp` (installed via `cargo install mq-content-lint --features lsp`) is a
 [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) server: live
 diagnostics, hover text, and quick-fix code actions in any LSP-capable editor. A [VS Code
-extension](./editors/vscode) built on it ships in this repo (not yet on the Marketplace, run it
-from source). Other editors can point their generic LSP client at the `mq-content-lint-lsp`
-binary for Markdown files.
+extension](./editors/vscode) built on it is available on the [Visual Studio
+Marketplace](https://marketplace.visualstudio.com/items?itemName=harehare.mq-content-lint). Other
+editors can point their generic LSP client at the `mq-content-lint-lsp` binary for Markdown files.
 
 ## Configuration
 
