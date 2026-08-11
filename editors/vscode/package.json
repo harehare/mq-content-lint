@@ -4,6 +4,7 @@
   "description": "Lint Markdown content with mq-content-lint, a static content linter built on mq",
   "version": "0.1.0",
   "publisher": "harehare",
+  "icon": "assets/icon.png",
   "license": "MIT",
   "homepage": "https://github.com/harehare/mq-content-lint",
   "repository": {
@@ -45,15 +46,19 @@
         "mqContentLint.serverPath": {
           "type": "string",
           "default": "mq-content-lint-lsp",
-          "description": "Path to the mq-content-lint-lsp executable. Defaults to resolving it from PATH."
+          "description": "Path to the mq-content-lint-lsp executable. Left at the default, an existing PATH install (e.g. via `cargo install`) is used if present, otherwise a matching prebuilt binary is downloaded automatically from GitHub Releases. Set this to skip that entirely and use a specific binary."
         }
       }
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "vscode:prepublish": "npm run compile"
+    "check-types": "tsc --noEmit",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "compile": "npm run check-types && npm run esbuild-base -- --sourcemap",
+    "watch": "npm run esbuild-base -- --sourcemap --watch",
+    "package": "npm run check-types && npm run esbuild-base -- --minify",
+    "vscode:prepublish": "npm run package",
+    "vsix": "vsce package"
   },
   "dependencies": {
     "vscode-languageclient": "^10.1.0"
@@ -61,6 +66,8 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.2",
     "typescript": "^5.5.4"
   }
 }

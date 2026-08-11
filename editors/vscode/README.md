@@ -8,15 +8,18 @@ and offering its fixes as quick actions.
 ## Requirements
 
 The `mq-content-lint-lsp` binary — this extension is a client, it doesn't reimplement any linting
-itself. Install it with:
+itself. On macOS (Apple Silicon), Linux (x64/arm64), and Windows (x64), nothing to install: the
+extension downloads a matching prebuilt binary from this repo's GitHub Releases the first time it
+activates, verifies it against the release's checksums, and caches it in global storage. On other
+platforms (e.g. Intel Mac), install it yourself:
 
 ```bash
 cargo install mq-content-lint --locked --features lsp
 ```
 
 That installs both `mq-content-lint` (the CLI) and `mq-content-lint-lsp` (the language server) —
-`lsp` is opt-in, so don't drop it from the command. If
-the server isn't on your `PATH`, set `mqContentLint.serverPath` to its full path.
+`lsp` is opt-in, so don't drop it from the command. An existing PATH install is always preferred
+over downloading. Set `mqContentLint.serverPath` to skip both and point at a specific binary.
 
 ## Features
 
@@ -40,7 +43,7 @@ the server isn't on your `PATH`, set `mqContentLint.serverPath` to its full path
 | Setting | Default | Description |
 |---|---|---|
 | `mqContentLint.enable` | `true` | Enable/disable the language server entirely. |
-| `mqContentLint.serverPath` | `"mq-content-lint-lsp"` | Path to the server binary; defaults to resolving it from `PATH`. |
+| `mqContentLint.serverPath` | `"mq-content-lint-lsp"` | Path to the server binary; left at the default, an existing `PATH` install is used if present, otherwise a matching prebuilt binary is downloaded automatically. |
 
 ## Development
 
@@ -53,5 +56,8 @@ npm run compile   # or `npm run watch`
 Press F5 in VS Code (with this directory open) to launch an Extension Development Host for manual
 testing — make sure `mq-content-lint-lsp` is built and on `PATH` first (`cargo install --path .
 --locked` from the repo root, or point `mqContentLint.serverPath` at
-`target/debug/mq-content-lint-lsp`). There's no packaged/published build yet — `npm run compile`
-plus `F5` is the workflow until this ships to the Marketplace.
+`target/debug/mq-content-lint-lsp`), since the auto-download only fetches from tagged GitHub
+Releases, not local builds.
+
+Run `npx vsce package` to produce a `.vsix` for local installs or manual upload; there's no
+CI publish step yet.
