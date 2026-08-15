@@ -17,7 +17,13 @@ impl Rule for NoMultipleBlanks {
         Severity::Warning
     }
 
-    fn check(&self, _doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        _doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let maximum = config
             .rule_options(self.id())
             .get_usize("maximum")
@@ -70,7 +76,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        NoMultipleBlanks.check(&doc, markdown, &LintConfig::default())
+        NoMultipleBlanks.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

@@ -32,7 +32,13 @@ impl Rule for NoInlineHtml {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let allowed = config
             .rule_options(self.id())
             .get_str_array("allowed")
@@ -65,7 +71,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        NoInlineHtml.check(&doc, markdown, &LintConfig::default())
+        NoInlineHtml.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]
@@ -83,6 +89,10 @@ mod tests {
     fn allowed_tags_are_not_flagged() {
         let config = LintConfig::from_toml_str("[rules.no_inline_html]\nallowed = [\"br\"]\n").unwrap();
         let doc: mq_markdown::Markdown = "line one<br>line two\n".parse().unwrap();
-        assert!(NoInlineHtml.check(&doc, "line one<br>line two\n", &config).is_empty());
+        assert!(
+            NoInlineHtml
+                .check(&doc, "line one<br>line two\n", &config, None)
+                .is_empty()
+        );
     }
 }

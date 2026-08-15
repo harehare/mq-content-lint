@@ -23,7 +23,13 @@ impl Rule for NoDuplicateHeading {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let mut headings: Vec<(String, Option<mq_markdown::Position>)> = Vec::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             if let Node::Heading(heading) = node {
@@ -53,7 +59,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        NoDuplicateHeading.check(&doc, markdown, &LintConfig::default())
+        NoDuplicateHeading.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

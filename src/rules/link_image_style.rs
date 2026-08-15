@@ -46,7 +46,13 @@ impl Rule for LinkImageStyle {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let options = config.rule_options(self.id());
         let disallowed: Vec<&str> = ["autolink", "inline", "full", "collapsed", "shortcut"]
             .into_iter()
@@ -118,7 +124,7 @@ mod tests {
         let doc: mq_markdown::Markdown = "[text](url)\n".parse().unwrap();
         assert!(
             LinkImageStyle
-                .check(&doc, "[text](url)\n", &LintConfig::default())
+                .check(&doc, "[text](url)\n", &LintConfig::default(), None)
                 .is_empty()
         );
     }
@@ -128,7 +134,7 @@ mod tests {
         let config = LintConfig::from_toml_str("[rules.link_image_style]\nautolink = false\n").unwrap();
         let source = "<https://example.com>\n";
         let doc: mq_markdown::Markdown = source.parse().unwrap();
-        let diagnostics = LinkImageStyle.check(&doc, source, &config);
+        let diagnostics = LinkImageStyle.check(&doc, source, &config, None);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(
             diagnostics[0].message,
@@ -144,7 +150,7 @@ mod tests {
         let config = LintConfig::from_toml_str("[rules.link_image_style]\nautolink = false\n").unwrap();
         let source = "[text](https://example.com)\n";
         let doc: mq_markdown::Markdown = source.parse().unwrap();
-        assert!(LinkImageStyle.check(&doc, source, &config).is_empty());
+        assert!(LinkImageStyle.check(&doc, source, &config, None).is_empty());
     }
 
     #[test]
@@ -152,7 +158,7 @@ mod tests {
         let config = LintConfig::from_toml_str("[rules.link_image_style]\nautolink = false\n").unwrap();
         let source = "従うように <https://example.com>\n";
         let doc: mq_markdown::Markdown = source.parse().unwrap();
-        let diagnostics = LinkImageStyle.check(&doc, source, &config);
+        let diagnostics = LinkImageStyle.check(&doc, source, &config, None);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(
             diagnostics[0].message,

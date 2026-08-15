@@ -25,7 +25,13 @@ impl Rule for DescriptiveLinkText {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let options = config.rule_options(self.id());
         let forbidden = options.get_str_array("forbidden");
         let forbidden: Vec<String> = forbidden
@@ -66,7 +72,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        DescriptiveLinkText.check(&doc, markdown, &LintConfig::default())
+        DescriptiveLinkText.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

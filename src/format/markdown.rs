@@ -67,7 +67,7 @@ mod tests {
         let source = "![](missing-alt.png)\n";
         let doc: mq_markdown::Markdown = source.parse().unwrap();
         Linter::with_default_rules()
-            .run(&doc, source, &LintConfig::default())
+            .run(&doc, source, &LintConfig::default(), None)
             .into_iter()
             .filter(|d| d.rule_id() == mq_content_lint::RuleId::ImageMissingAlt)
             .map(ReportItem::from)

@@ -18,7 +18,13 @@ impl Rule for NoTrailingSpaces {
         Severity::Warning
     }
 
-    fn check(&self, _doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        _doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let br_spaces = config
             .rule_options(self.id())
             .get_usize("br_spaces")
@@ -53,7 +59,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        NoTrailingSpaces.check(&doc, markdown, &LintConfig::default())
+        NoTrailingSpaces.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

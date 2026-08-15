@@ -1,6 +1,6 @@
 //! User-defined lint rules expressed as mq queries.
 //!
-//! The crate-level docs call this out as a later stage of the project, deferred behind the 53
+//! The crate-level docs call this out as a later stage of the project, deferred behind the 55
 //! deterministic built-in rules — this is that stage. A [`CustomRule`]'s `query` is evaluated
 //! against the document with mq's own query engine (the same one `mq` and `mq-lint` embed);
 //! every result that resolves to a markdown node with a source position becomes one diagnostic

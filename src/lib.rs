@@ -5,7 +5,7 @@
 //! table consistency, whitespace, link/image hygiene, required front matter — comprehensive
 //! coverage of [markdownlint](https://github.com/DavidAnson/markdownlint)'s rule set, expressed
 //! against mq's own node model instead of a bespoke rule engine. It is a separate tool from
-//! `mq-lint` (which lints `.mq` query scripts, not Markdown content). Beyond the 53 built-in
+//! `mq-lint` (which lints `.mq` query scripts, not Markdown content). Beyond the 55 built-in
 //! rules, [`custom_rules`] lets a config file define its own rules as mq queries — the one
 //! capability neither markdownlint nor rumdl offer.
 //!
@@ -18,7 +18,7 @@
 //! let doc: mq_markdown::Markdown = source.parse().unwrap();
 //! let config = LintConfig::default();
 //! let linter = Linter::with_default_rules();
-//! let diagnostics = linter.run(&doc, source, &config);
+//! let diagnostics = linter.run(&doc, source, &config, None);
 //!
 //! assert_eq!(diagnostics.len(), 1);
 //! ```
@@ -171,13 +171,20 @@ impl Linter {
     ///
     /// `source` is the raw text `doc` was parsed from — some rules (whitespace, line length,
     /// exact heading/list marker syntax) need it because the AST alone doesn't preserve it.
-    pub fn run(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    /// `path` is the linted file's own path, if it has one on disk (`None` for stdin).
+    pub fn run(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let mut diagnostics: Vec<Diagnostic> = self
             .rule_set
             .iter()
             .filter(|rule| config.is_rule_enabled(rule.id()))
             .flat_map(|rule| {
-                rule.check(doc, source, config).into_iter().map(|mut d| {
+                rule.check(doc, source, config, path).into_iter().map(|mut d| {
                     d.severity = config.severity_for(rule.id(), rule.default_severity());
                     d
                 })

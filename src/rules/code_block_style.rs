@@ -23,7 +23,13 @@ impl Rule for CodeBlockStyle {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let configured = config.rule_options(self.id()).get_str("style").map(str::to_string);
         let mut expected: Option<bool> = configured.as_deref().map(|s| s == "fenced");
 
@@ -58,7 +64,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        CodeBlockStyle.check(&doc, markdown, &LintConfig::default())
+        CodeBlockStyle.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

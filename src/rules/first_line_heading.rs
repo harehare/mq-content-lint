@@ -21,7 +21,13 @@ impl Rule for FirstLineHeading {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let first_content = doc.nodes.iter().find(|n| !matches!(n, Node::Yaml(_) | Node::Toml(_)));
 
         let is_h1 = matches!(first_content, Some(Node::Heading(h)) if h.depth == 1);
@@ -43,7 +49,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        FirstLineHeading.check(&doc, markdown, &LintConfig::default())
+        FirstLineHeading.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

@@ -18,7 +18,13 @@ impl Rule for CommandsShowOutput {
         Severity::Info
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Code(code) = node else { return };
@@ -62,7 +68,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        CommandsShowOutput.check(&doc, markdown, &LintConfig::default())
+        CommandsShowOutput.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

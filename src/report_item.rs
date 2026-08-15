@@ -94,9 +94,10 @@ pub fn lint(
     source: &str,
     linter: &Linter,
     config: &LintConfig,
+    path: Option<&std::path::Path>,
 ) -> Result<Vec<ReportItem>, CustomRuleError> {
     let mut items: Vec<ReportItem> = linter
-        .run(doc, source, config)
+        .run(doc, source, config, path)
         .into_iter()
         .map(ReportItem::from)
         .collect();
@@ -135,7 +136,7 @@ mod tests {
         .unwrap();
         let linter = Linter::with_default_rules();
 
-        let items = lint(&doc, source, &linter, &config).unwrap();
+        let items = lint(&doc, source, &linter, &config, None).unwrap();
 
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].rule_id(), "no_todo");
@@ -151,7 +152,7 @@ mod tests {
         let config = LintConfig::default();
         let linter = Linter::with_default_rules();
 
-        let items = lint(&doc, source, &linter, &config).unwrap();
+        let items = lint(&doc, source, &linter, &config, None).unwrap();
 
         assert!(items.iter().all(|item| item.rule_id() != "image_missing_alt"));
     }
@@ -171,7 +172,7 @@ mod tests {
         .unwrap();
         let linter = Linter::with_default_rules();
 
-        let items = lint(&doc, source, &linter, &config).unwrap();
+        let items = lint(&doc, source, &linter, &config, None).unwrap();
 
         assert!(items.iter().all(|item| item.rule_id() != "no_todo"));
     }
@@ -191,6 +192,6 @@ mod tests {
         .unwrap();
         let linter = Linter::with_default_rules();
 
-        assert!(lint(&doc, source, &linter, &config).is_err());
+        assert!(lint(&doc, source, &linter, &config, None).is_err());
     }
 }

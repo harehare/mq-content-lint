@@ -54,7 +54,13 @@ impl Rule for ProperNames {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let names = config
             .rule_options(self.id())
             .get_str_array("names")
@@ -108,7 +114,7 @@ mod tests {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
         let list = names.iter().map(|n| format!("{n:?}")).collect::<Vec<_>>().join(", ");
         let config = LintConfig::from_toml_str(&format!("[rules.proper_names]\nnames = [{list}]\n")).unwrap();
-        ProperNames.check(&doc, markdown, &config)
+        ProperNames.check(&doc, markdown, &config, None)
     }
 
     #[test]
@@ -116,7 +122,7 @@ mod tests {
         let doc: mq_markdown::Markdown = "javascript is great\n".parse().unwrap();
         assert!(
             ProperNames
-                .check(&doc, "javascript is great\n", &LintConfig::default())
+                .check(&doc, "javascript is great\n", &LintConfig::default(), None)
                 .is_empty()
         );
     }

@@ -191,7 +191,7 @@ fn run() -> io::Result<bool> {
         stdin.read_to_string(&mut content)?;
 
         if cli.fix || cli.diff {
-            let (fixed, _, _) = fix_source(&content, &linter, &config)?;
+            let (fixed, _, _) = fix_source(&content, &linter, &config, None)?;
             if cli.diff {
                 let changed = fixed != content;
                 if changed {
@@ -203,7 +203,7 @@ fn run() -> io::Result<bool> {
             return Ok(false);
         }
 
-        let diagnostics = lint_content(&content, &linter, &config, min_severity)?;
+        let diagnostics = lint_content(&content, &linter, &config, min_severity, None)?;
         let had_diagnostics = !diagnostics.is_empty();
         format::write_report(&mut w, cli.format, &[("<stdin>".to_string(), content, diagnostics)])?;
         return Ok(had_diagnostics);
@@ -318,7 +318,7 @@ fn process_file(
     let label = path.display().to_string();
 
     if diff {
-        let (fixed, _, _) = fix_source(&original, linter, config)
+        let (fixed, _, _) = fix_source(&original, linter, config, Some(path))
             .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
         let file_diff = (fixed != original).then(|| compute_diff(&label, &original, &fixed));
         return Ok(FileOutcome {
@@ -331,7 +331,7 @@ fn process_file(
     }
 
     let (source, fix_count, items) = if fix {
-        let (fixed, count, items) = fix_source(&original, linter, config)
+        let (fixed, count, items) = fix_source(&original, linter, config, Some(path))
             .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
         if fixed == original {
             (fixed, None, items)
@@ -341,7 +341,7 @@ fn process_file(
             (fixed, Some(count), items)
         }
     } else {
-        let items = lint_items(&original, linter, config)
+        let items = lint_items(&original, linter, config, Some(path))
             .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
         (original, None, items)
     };
@@ -416,11 +416,11 @@ fn colorize_unified_diff(unified: &str) -> String {
 /// and sorted by position — unfiltered by severity, since a caller computing fixes needs every
 /// diagnostic that carries one regardless of severity (severity filtering is purely a reporting
 /// concern; see [`lint_content`]).
-fn lint_items(content: &str, linter: &Linter, config: &LintConfig) -> io::Result<Vec<ReportItem>> {
+fn lint_items(content: &str, linter: &Linter, config: &LintConfig, path: Option<&Path>) -> io::Result<Vec<ReportItem>> {
     let doc: mq_markdown::Markdown = content
         .parse()
         .map_err(|e: miette::Error| io::Error::other(e.to_string()))?;
-    mq_content_lint::report_item::lint(&doc, content, linter, config).map_err(io::Error::other)
+    mq_content_lint::report_item::lint(&doc, content, linter, config, path).map_err(io::Error::other)
 }
 
 /// [`lint_items`], filtered to diagnostics at or above `min_severity` — what the CLI actually
@@ -430,8 +430,9 @@ fn lint_content(
     linter: &Linter,
     config: &LintConfig,
     min_severity: Severity,
+    path: Option<&Path>,
 ) -> io::Result<Vec<ReportItem>> {
-    Ok(lint_items(content, linter, config)?
+    Ok(lint_items(content, linter, config, path)?
         .into_iter()
         .filter(|item| item.severity() >= min_severity)
         .collect())
@@ -453,11 +454,16 @@ const MAX_FIX_PASSES: usize = 10;
 /// diagnostics for the *final* text — the same [`lint_items`] a caller would get by linting the
 /// returned text again, computed once already as a side effect of confirming convergence, so a
 /// caller that also needs a diagnostic report shouldn't re-lint from scratch.
-fn fix_source(content: &str, linter: &Linter, config: &LintConfig) -> io::Result<(String, usize, Vec<ReportItem>)> {
+fn fix_source(
+    content: &str,
+    linter: &Linter,
+    config: &LintConfig,
+    path: Option<&Path>,
+) -> io::Result<(String, usize, Vec<ReportItem>)> {
     let mut current = content.to_string();
     let mut total_fixed = 0;
     for _ in 0..MAX_FIX_PASSES {
-        let (fixed, items) = fix_source_once(&current, linter, config)?;
+        let (fixed, items) = fix_source_once(&current, linter, config, path)?;
         let count = items.iter().filter(|item| item.fix().is_some()).count();
         if count == 0 || fixed == current {
             return Ok((current, total_fixed, items));
@@ -468,7 +474,7 @@ fn fix_source(content: &str, linter: &Linter, config: &LintConfig) -> io::Result
     // Gave up after MAX_FIX_PASSES without reaching a fixed point: the last fix_source_once call
     // above linted the pass *before* `current`'s last update, so its diagnostics are stale for
     // the text we're about to return — one more lint-only pass keeps the two in sync.
-    let items = lint_items(&current, linter, config)?;
+    let items = lint_items(&current, linter, config, path)?;
     Ok((current, total_fixed, items))
 }
 
@@ -476,8 +482,13 @@ fn fix_source(content: &str, linter: &Linter, config: &LintConfig) -> io::Result
 /// rewritten text alongside the diagnostics that pass computed (reused by [`fix_source`] rather
 /// than re-linting). Diagnostics are not recomputed within this single pass — see [`fix_source`],
 /// which loops this to convergence.
-fn fix_source_once(content: &str, linter: &Linter, config: &LintConfig) -> io::Result<(String, Vec<ReportItem>)> {
-    let items = lint_items(content, linter, config)?;
+fn fix_source_once(
+    content: &str,
+    linter: &Linter,
+    config: &LintConfig,
+    path: Option<&Path>,
+) -> io::Result<(String, Vec<ReportItem>)> {
+    let items = lint_items(content, linter, config, path)?;
     let fixes: Vec<mq_content_lint::Fix> = items.iter().filter_map(|item| item.fix().cloned()).collect();
     Ok((mq_content_lint::fix::apply_fixes(content, &fixes), items))
 }
@@ -1085,9 +1096,9 @@ mod tests {
     fn test_lint_content_filters_by_min_severity() {
         let linter = Linter::with_default_rules();
         let config = LintConfig::default();
-        let diagnostics = lint_content("![](x.png)\n", &linter, &config, Severity::Error).unwrap();
+        let diagnostics = lint_content("![](x.png)\n", &linter, &config, Severity::Error, None).unwrap();
         assert_eq!(diagnostics.len(), 1);
-        let none = lint_content("# ok\n", &linter, &config, Severity::Error).unwrap();
+        let none = lint_content("# ok\n", &linter, &config, Severity::Error, None).unwrap();
         assert!(none.is_empty());
     }
 
@@ -1095,7 +1106,7 @@ mod tests {
     fn test_fix_source_applies_fixes_in_one_pass() {
         let linter = Linter::with_default_rules();
         let config = LintConfig::default();
-        let (fixed, count, items) = fix_source("#Title\n", &linter, &config).unwrap();
+        let (fixed, count, items) = fix_source("#Title\n", &linter, &config, None).unwrap();
         assert_eq!(fixed, "# Title\n");
         assert_eq!(count, 1);
         assert!(
@@ -1112,12 +1123,12 @@ mod tests {
         // collapses that back down to one blank line, and pass 4 finds nothing left to fix.
         let linter = Linter::with_default_rules();
         let config = LintConfig::default();
-        let (fixed, count, _items) = fix_source("#H1\n##H2\nbody\n", &linter, &config).unwrap();
+        let (fixed, count, _items) = fix_source("#H1\n##H2\nbody\n", &linter, &config, None).unwrap();
         assert_eq!(fixed, "# H1\n\n## H2\n\nbody\n");
         assert_eq!(count, 6, "2 (pass 1) + 3 (pass 2) + 1 (pass 3)");
 
         // A single lint-and-fix pass alone is not enough to reach that result.
-        let (single_pass, _items) = fix_source_once("#H1\n##H2\nbody\n", &linter, &config).unwrap();
+        let (single_pass, _items) = fix_source_once("#H1\n##H2\nbody\n", &linter, &config, None).unwrap();
         assert_ne!(single_pass, fixed);
     }
 
@@ -1134,7 +1145,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let (fixed, count, _items) = fix_source("TODO: fix this\n", &linter, &config).unwrap();
+        let (fixed, count, _items) = fix_source("TODO: fix this\n", &linter, &config, None).unwrap();
         assert_eq!(fixed, "DONE: fix this\n");
         assert_eq!(count, 1);
     }
@@ -1143,7 +1154,7 @@ mod tests {
     fn test_fix_source_is_a_noop_when_nothing_is_fixable() {
         let linter = Linter::with_default_rules();
         let config = LintConfig::default();
-        let (fixed, count, items) = fix_source("# Title\n", &linter, &config).unwrap();
+        let (fixed, count, items) = fix_source("# Title\n", &linter, &config, None).unwrap();
         assert_eq!(fixed, "# Title\n");
         assert_eq!(count, 0);
         assert!(items.is_empty());
@@ -1156,7 +1167,7 @@ mod tests {
         // items are the full remaining report, not just what got fixed.
         let linter = Linter::with_default_rules();
         let config = LintConfig::from_toml_str("[front_matter]\nrequired_keys = [\"title\"]\n").unwrap();
-        let (fixed, _count, items) = fix_source("#Title\n", &linter, &config).unwrap();
+        let (fixed, _count, items) = fix_source("#Title\n", &linter, &config, None).unwrap();
         assert_eq!(fixed, "# Title\n");
         assert!(items.iter().any(|item| item.rule_id() == "missing_front_matter_key"));
     }

@@ -52,6 +52,7 @@ mod no_trailing_spaces;
 mod ol_prefix;
 mod proper_names;
 mod reference_links_images;
+mod relative_link_exists;
 mod required_headings;
 mod single_h1;
 mod single_trailing_newline;
@@ -77,8 +78,14 @@ pub trait Rule: Send + Sync {
     /// `source` is the raw text `doc` was parsed from. Implementations set
     /// [`Diagnostic::severity`] to `self.default_severity()`; [`Linter`](crate::Linter) applies
     /// any configured override afterwards, so rules don't need to consult `config` for severity
-    /// themselves.
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic>;
+    /// themselves. `path` is the linted file's own path, if it has one on disk (`None` for stdin).
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic>;
 
     /// Rule-specific keys this rule reads from its `[rules.<id>]` config table via
     /// [`crate::config::RuleOptions`]'s `get_*` accessors (besides the universal `enabled`/
@@ -144,6 +151,7 @@ pub fn all_rules() -> Vec<Box<dyn Rule>> {
         Box::new(link_image_reference_definitions::LinkImageReferenceDefinitions),
         Box::new(link_image_style::LinkImageStyle),
         Box::new(link_fragments::LinkFragments),
+        Box::new(relative_link_exists::RelativeLinkExists),
         Box::new(descriptive_link_text::DescriptiveLinkText),
         Box::new(no_space_in_links::NoSpaceInLinks),
         Box::new(no_space_in_emphasis::NoSpaceInEmphasis),

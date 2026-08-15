@@ -21,7 +21,13 @@ impl Rule for SingleH1 {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let mut h1s: Vec<Option<mq_markdown::Position>> = Vec::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             if let Node::Heading(heading) = node
@@ -51,7 +57,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        SingleH1.check(&doc, markdown, &LintConfig::default())
+        SingleH1.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

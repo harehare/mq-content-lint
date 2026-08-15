@@ -17,7 +17,13 @@ impl Rule for BlanksAroundLists {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let lines: Vec<&str> = source.lines().collect();
         let mut diagnostics = Vec::new();
 
@@ -71,7 +77,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        BlanksAroundLists.check(&doc, markdown, &LintConfig::default())
+        BlanksAroundLists.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

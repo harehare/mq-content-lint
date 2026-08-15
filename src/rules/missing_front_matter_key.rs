@@ -83,7 +83,13 @@ impl Rule for MissingFrontMatterKey {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         if config.required_front_matter_keys.is_empty() {
             return Vec::new();
         }
@@ -146,7 +152,7 @@ mod tests {
                 .join(", ")
         ))
         .unwrap();
-        MissingFrontMatterKey.check(&doc, markdown, &config)
+        MissingFrontMatterKey.check(&doc, markdown, &config, None)
     }
 
     #[test]
