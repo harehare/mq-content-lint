@@ -25,7 +25,13 @@ impl Rule for ListIndent {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let mut expected_by_level: HashMap<u8, usize> = HashMap::new();
         let mut diagnostics = Vec::new();
         let lines = crate::text::LineIndex::new(source);
@@ -67,7 +73,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        ListIndent.check(&doc, markdown, &LintConfig::default())
+        ListIndent.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

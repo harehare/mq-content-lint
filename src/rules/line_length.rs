@@ -26,7 +26,13 @@ impl Rule for LineLength {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let options = config.rule_options(self.id());
         let limit = options
             .get_usize("limit")
@@ -75,7 +81,7 @@ mod tests {
     fn run_with_limit(markdown: &str, limit: usize) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
         let config = LintConfig::from_toml_str(&format!("[rules.line_length]\nlimit = {limit}\n")).unwrap();
-        LineLength.check(&doc, markdown, &config)
+        LineLength.check(&doc, markdown, &config, None)
     }
 
     #[test]
@@ -99,7 +105,7 @@ mod tests {
         let mut config = LintConfig::default();
         config.editorconfig_max_line_length = Some(10);
 
-        let diagnostics = LineLength.check(&doc, "this line is over the limit\n", &config);
+        let diagnostics = LineLength.check(&doc, "this line is over the limit\n", &config, None);
 
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(
@@ -114,7 +120,7 @@ mod tests {
         let mut config = LintConfig::from_toml_str("[rules.line_length]\nlimit = 3\n").unwrap();
         config.editorconfig_max_line_length = Some(80);
 
-        let diagnostics = LineLength.check(&doc, "short\n", &config);
+        let diagnostics = LineLength.check(&doc, "short\n", &config, None);
 
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].message, LintMessage::LineLength { length: 5, limit: 3 });
@@ -130,6 +136,7 @@ mod tests {
             &doc,
             "```\nthis is a very long line inside a code block\n```\n",
             &config,
+            None,
         );
         assert!(diagnostics.is_empty());
     }

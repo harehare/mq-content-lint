@@ -25,7 +25,7 @@ fn fixture(rule_dir: &str, file: &str) -> String {
 fn diagnostics_for(rule_id: RuleId, markdown: &str, config: &LintConfig) -> Vec<mq_content_lint::Diagnostic> {
     let doc: mq_markdown::Markdown = markdown.parse().expect("fixture must be valid markdown");
     Linter::with_default_rules()
-        .run(&doc, markdown, config)
+        .run(&doc, markdown, config, None)
         .into_iter()
         .filter(|d| d.rule_id() == rule_id)
         .collect()
@@ -155,8 +155,8 @@ fn default_rules_run_deterministically_with_no_config() {
     let config = LintConfig::default();
     let linter = Linter::with_default_rules();
 
-    let first = linter.run(&doc, &markdown, &config);
-    let second = linter.run(&doc, &markdown, &config);
+    let first = linter.run(&doc, &markdown, &config, None);
+    let second = linter.run(&doc, &markdown, &config, None);
     assert_eq!(first, second);
     assert!(!first.is_empty());
 }

@@ -26,7 +26,13 @@ impl Rule for NoSpaceInCode {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         let byte_index = crate::text::LineByteIndex::new(source);
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
@@ -74,7 +80,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        NoSpaceInCode.check(&doc, markdown, &LintConfig::default())
+        NoSpaceInCode.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

@@ -242,7 +242,13 @@ impl Rule for TableColumnStyle {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let options = config.rule_options(self.id());
         let configured_style = options.get_str("style").and_then(|s| match s {
             "compact" => Some(Style::Compact),
@@ -323,7 +329,7 @@ mod tests {
     fn run_with_config(markdown: &str, config_toml: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
         let config = LintConfig::from_toml_str(config_toml).unwrap();
-        TableColumnStyle.check(&doc, markdown, &config)
+        TableColumnStyle.check(&doc, markdown, &config, None)
     }
 
     fn run_compact(markdown: &str) -> Vec<Diagnostic> {

@@ -24,7 +24,13 @@ impl Rule for TableColumnCount {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         // Group consecutive table cells into per-table blocks, since a document can contain
         // more than one table and each restarts its own row numbering at 0.
         let mut diagnostics = Vec::new();
@@ -79,7 +85,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        TableColumnCount.check(&doc, markdown, &LintConfig::default())
+        TableColumnCount.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

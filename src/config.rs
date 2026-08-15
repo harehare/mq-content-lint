@@ -122,6 +122,42 @@ pub enum ConfigError {
     },
     #[error("{path}: unknown option `{key}` for rule `{rule}` in [rules.{rule}] table")]
     UnknownRuleOption { path: PathBuf, rule: String, key: String },
+    #[error(
+        "{path}: custom rule id `{id}` collides with a built-in rule id — pick a different id for [[custom_rules]]"
+    )]
+    CustomRuleIdCollidesWithBuiltin { path: PathBuf, id: String },
+    #[error("duplicate custom rule id `{id}` — [[custom_rules]] ids must be unique")]
+    DuplicateCustomRuleId { id: String },
+}
+
+/// Rejects a `custom_rules` list where an id collides with a built-in [`RuleId`] or repeats
+/// another custom rule's id — either would make inline disable comments and `--disable` ambiguous
+/// about which rule they target. `path` is only used for the built-in-collision message, since
+/// that check runs per config file; duplicate-id checks also run again after cascading (see
+/// [`LintConfig::discover`]), where no single file is to "blame".
+fn validate_custom_rule_ids(custom_rules: &[CustomRule], path: &Path) -> Result<(), ConfigError> {
+    for rule in custom_rules {
+        if rule.id.parse::<RuleId>().is_ok() {
+            return Err(ConfigError::CustomRuleIdCollidesWithBuiltin {
+                path: path.to_path_buf(),
+                id: rule.id.clone(),
+            });
+        }
+    }
+    reject_duplicate_custom_rule_ids(custom_rules)
+}
+
+/// Shared by the single-file check above and [`LintConfig::discover`]'s post-cascade check
+/// (cascading can bring together two files that each pass the single-file check on their own but
+/// share an id once merged).
+fn reject_duplicate_custom_rule_ids(custom_rules: &[CustomRule]) -> Result<(), ConfigError> {
+    let mut seen = std::collections::HashSet::with_capacity(custom_rules.len());
+    for rule in custom_rules {
+        if !seen.insert(rule.id.as_str()) {
+            return Err(ConfigError::DuplicateCustomRuleId { id: rule.id.clone() });
+        }
+    }
+    Ok(())
 }
 
 /// Resolved linter configuration.
@@ -185,6 +221,8 @@ impl LintConfig {
             rules.insert(rule_id, setting);
         }
 
+        validate_custom_rule_ids(&file.custom_rules, path)?;
+
         Ok(Self {
             rules,
             required_front_matter_keys: file.front_matter.required_keys,
@@ -237,6 +275,10 @@ impl LintConfig {
         for path in candidates {
             merged = merged.cascade(Self::load_from_path(&path)?);
         }
+        // A duplicate id can only be introduced by cascading (each individual file was already
+        // checked on its own in `load_from_path`); a built-in collision, by contrast, can't — it
+        // doesn't depend on what other files are in the chain.
+        reject_duplicate_custom_rule_ids(&merged.custom_rules)?;
         merged.editorconfig_max_line_length = crate::editorconfig::max_line_length(start_dir);
         Ok(merged)
     }
@@ -561,6 +603,72 @@ mod tests {
 
         let config = LintConfig::discover(&nested).unwrap();
         assert_eq!(config.required_front_matter_keys, vec!["title"]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn custom_rule_id_colliding_with_a_builtin_rule_is_a_parse_error() {
+        let result = LintConfig::from_toml_str(
+            r#"
+            [[custom_rules]]
+            id = "line_length"
+            query = ".h"
+            message = "shadows a built-in rule"
+            "#,
+        );
+        assert!(matches!(
+            result,
+            Err(ConfigError::CustomRuleIdCollidesWithBuiltin { .. })
+        ));
+    }
+
+    #[test]
+    fn duplicate_custom_rule_ids_in_one_file_are_a_parse_error() {
+        let result = LintConfig::from_toml_str(
+            r#"
+            [[custom_rules]]
+            id = "no_todo"
+            query = ".h"
+            message = "first"
+
+            [[custom_rules]]
+            id = "no_todo"
+            query = ".image"
+            message = "second"
+            "#,
+        );
+        assert!(matches!(result, Err(ConfigError::DuplicateCustomRuleId { .. })));
+    }
+
+    #[test]
+    fn duplicate_custom_rule_ids_across_cascaded_files_are_a_parse_error() {
+        let dir = tempdir();
+        std::fs::write(
+            dir.join(CONFIG_FILE_NAME),
+            r#"
+            [[custom_rules]]
+            id = "shared_id"
+            query = ".h"
+            message = "root"
+            "#,
+        )
+        .unwrap();
+        let nested = dir.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(
+            nested.join(CONFIG_FILE_NAME),
+            r#"
+            [[custom_rules]]
+            id = "shared_id"
+            query = ".image"
+            message = "pkg"
+            "#,
+        )
+        .unwrap();
+
+        let result = LintConfig::discover(&nested);
+        assert!(matches!(result, Err(ConfigError::DuplicateCustomRuleId { .. })));
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

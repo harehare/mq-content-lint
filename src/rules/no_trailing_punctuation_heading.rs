@@ -20,7 +20,13 @@ impl Rule for NoTrailingPunctuationHeading {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let options = config.rule_options(self.id());
         let punctuation: Vec<char> = options
             .get_str("punctuation")
@@ -68,7 +74,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        NoTrailingPunctuationHeading.check(&doc, markdown, &LintConfig::default())
+        NoTrailingPunctuationHeading.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

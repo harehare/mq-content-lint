@@ -21,7 +21,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 /// How long `did_change` waits for editing to go quiet before actually linting. A full
-/// re-lint (parse + all 53 rules) on every single keystroke would otherwise pile up behind a
+/// re-lint (parse + all 55 rules) on every single keystroke would otherwise pile up behind a
 /// fast typist or a large file; this coalesces a burst of edits into one lint, the same way
 /// other LSP servers (rust-analyzer included) debounce didChange-triggered work. Chosen to feel
 /// instant once typing pauses without re-linting on every keystroke.
@@ -101,7 +101,8 @@ struct Backend {
 impl Backend {
     async fn lint_and_publish(&self, uri: Url, text: String, version: Option<i32>) {
         let config = self.resolve_config(&uri).await;
-        let entries = lint_to_lsp(&text, &self.linter, &config);
+        let path = uri.to_file_path().ok();
+        let entries = lint_to_lsp(&text, &self.linter, &config, path.as_deref());
         let diagnostics: Vec<Diagnostic> = entries.iter().map(|e| e.diagnostic.clone()).collect();
 
         if let Ok(mut documents) = self.documents.write() {
@@ -477,13 +478,18 @@ fn disable_line_code_action(uri: &Url, diagnostic: &Diagnostic, rule_id: &str) -
 /// Lints `source`, returning one entry per diagnostic (in publish order) — a parse error or a bad
 /// custom-rule query becomes a single document-level entry rather than silently producing
 /// nothing, mirroring how the CLI surfaces those as hard errors.
-fn lint_to_lsp(source: &str, linter: &Linter, config: &LintConfig) -> Vec<DiagnosticEntry> {
+fn lint_to_lsp(
+    source: &str,
+    linter: &Linter,
+    config: &LintConfig,
+    path: Option<&std::path::Path>,
+) -> Vec<DiagnosticEntry> {
     let doc: mq_markdown::Markdown = match source.parse() {
         Ok(doc) => doc,
         Err(err) => return vec![error_entry(format!("{err}"))],
     };
 
-    let items = match report_item::lint(&doc, source, linter, config) {
+    let items = match report_item::lint(&doc, source, linter, config, path) {
         Ok(items) => items,
         Err(err) => return vec![error_entry(format!("{err}"))],
     };
@@ -644,7 +650,7 @@ mod tests {
     fn lint_to_lsp_reports_a_builtin_diagnostic_with_its_rule_id_as_code() {
         let linter = Linter::with_default_rules();
         let config = LintConfig::default();
-        let entries = lint_to_lsp("![](x.png)\n", &linter, &config);
+        let entries = lint_to_lsp("![](x.png)\n", &linter, &config, None);
 
         let entry = entries
             .iter()
@@ -658,7 +664,7 @@ mod tests {
     fn lint_to_lsp_carries_a_fix_through_for_a_fixable_rule() {
         let linter = Linter::with_default_rules();
         let config = LintConfig::default();
-        let entries = lint_to_lsp("#Title\n", &linter, &config);
+        let entries = lint_to_lsp("#Title\n", &linter, &config, None);
 
         let index = entries
             .iter()
@@ -681,7 +687,7 @@ mod tests {
         )
         .unwrap();
 
-        let entries = lint_to_lsp("# Title\n", &linter, &config);
+        let entries = lint_to_lsp("# Title\n", &linter, &config, None);
         assert_eq!(entries.len(), 1);
         assert!(entries[0].diagnostic.message.contains("broken"));
     }

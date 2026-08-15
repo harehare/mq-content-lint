@@ -41,7 +41,13 @@ impl Rule for TablePipeStyle {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let mut expected = config.rule_options(self.id()).get_str("style").map(str::to_string);
         let mut seen_lines = HashSet::new();
         let mut diagnostics = Vec::new();
@@ -91,7 +97,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        TablePipeStyle.check(&doc, markdown, &LintConfig::default())
+        TablePipeStyle.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

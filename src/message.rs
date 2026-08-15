@@ -96,6 +96,8 @@ pub enum RuleId {
     LinkImageStyle,
     /// MD051: a link fragment (`#section`) doesn't match any heading in the document.
     LinkFragments,
+    /// MD057: a relative link doesn't point to a file that exists on disk.
+    RelativeLinkExists,
     /// MD059: link text should be descriptive, not generic like "click here".
     DescriptiveLinkText,
     /// MD039: spaces inside link text brackets.
@@ -169,6 +171,7 @@ impl RuleId {
         RuleId::LinkImageReferenceDefinitions,
         RuleId::LinkImageStyle,
         RuleId::LinkFragments,
+        RuleId::RelativeLinkExists,
         RuleId::DescriptiveLinkText,
         RuleId::NoSpaceInLinks,
         RuleId::NoSpaceInEmphasis,
@@ -228,6 +231,7 @@ impl RuleId {
             RuleId::LinkImageReferenceDefinitions => "link_image_reference_definitions",
             RuleId::LinkImageStyle => "link_image_style",
             RuleId::LinkFragments => "link_fragments",
+            RuleId::RelativeLinkExists => "relative_link_exists",
             RuleId::DescriptiveLinkText => "descriptive_link_text",
             RuleId::NoSpaceInLinks => "no_space_in_links",
             RuleId::NoSpaceInEmphasis => "no_space_in_emphasis",
@@ -283,6 +287,7 @@ impl RuleId {
             RuleId::NoEmptyLinks
             | RuleId::LinkImageStyle
             | RuleId::LinkFragments
+            | RuleId::RelativeLinkExists
             | RuleId::DescriptiveLinkText
             | RuleId::NoSpaceInLinks => Some(Selector::Link),
             RuleId::ReferenceLinksImages => Some(Selector::LinkRef),
@@ -353,6 +358,7 @@ impl RuleId {
                 "MD054: link/image style should be consistent (inline, reference, autolink, ...)."
             }
             RuleId::LinkFragments => "MD051: a link fragment (`#section`) doesn't match any heading in the document.",
+            RuleId::RelativeLinkExists => "MD057: a relative link doesn't point to a file that exists on disk.",
             RuleId::DescriptiveLinkText => r#"MD059: link text should be descriptive, not generic like "click here"."#,
             RuleId::NoSpaceInLinks => "MD039: spaces inside link text brackets.",
             RuleId::NoSpaceInEmphasis => "MD037: spaces inside emphasis markers.",
@@ -477,6 +483,7 @@ pub enum LintMessage {
     LinkImageReferenceDefinitions { label: String },
     LinkImageStyle { expected: String, found: String },
     LinkFragments { fragment: String },
+    RelativeLinkExists { path: String },
     DescriptiveLinkText { text: String },
     NoSpaceInLinks,
     NoSpaceInEmphasis,
@@ -539,6 +546,7 @@ impl LintMessage {
             LintMessage::LinkImageReferenceDefinitions { .. } => RuleId::LinkImageReferenceDefinitions,
             LintMessage::LinkImageStyle { .. } => RuleId::LinkImageStyle,
             LintMessage::LinkFragments { .. } => RuleId::LinkFragments,
+            LintMessage::RelativeLinkExists { .. } => RuleId::RelativeLinkExists,
             LintMessage::DescriptiveLinkText { .. } => RuleId::DescriptiveLinkText,
             LintMessage::NoSpaceInLinks => RuleId::NoSpaceInLinks,
             LintMessage::NoSpaceInEmphasis => RuleId::NoSpaceInEmphasis,
@@ -640,6 +648,7 @@ impl LintMessage {
             )),
             LintMessage::LinkImageStyle { expected, .. } => Some(format!("use {expected} style for this link/image")),
             LintMessage::LinkFragments { .. } => Some("fix the fragment, or add a matching heading".to_string()),
+            LintMessage::RelativeLinkExists { .. } => Some("fix the path, or create the missing file".to_string()),
             LintMessage::DescriptiveLinkText { .. } => {
                 Some("replace the link text with something that describes the destination".to_string())
             }
@@ -789,6 +798,9 @@ impl fmt::Display for LintMessage {
                     f,
                     "link fragment `#{fragment}` does not match any heading in this document"
                 )
+            }
+            LintMessage::RelativeLinkExists { path } => {
+                write!(f, "relative link `{path}` does not point to an existing file")
             }
             LintMessage::DescriptiveLinkText { text } => write!(f, "link text `{text}` is not descriptive"),
             LintMessage::NoSpaceInLinks => write!(f, "space just inside the link text brackets"),

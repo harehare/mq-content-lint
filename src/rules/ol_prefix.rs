@@ -34,7 +34,13 @@ impl Rule for OlPrefix {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let forced_style = config.rule_options(self.id()).get_str("style").map(str::to_string);
         let mut diagnostics = Vec::new();
         let lines = crate::text::LineIndex::new(source);
@@ -113,7 +119,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        OlPrefix.check(&doc, markdown, &LintConfig::default())
+        OlPrefix.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

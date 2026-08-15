@@ -100,7 +100,7 @@ mod tests {
         let source = "![](missing-alt.png)\n";
         let doc: mq_markdown::Markdown = source.parse().unwrap();
         Linter::with_default_rules()
-            .run(&doc, source, &LintConfig::default())
+            .run(&doc, source, &LintConfig::default(), None)
             .into_iter()
             .map(ReportItem::from)
             .collect()

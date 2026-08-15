@@ -22,7 +22,13 @@ impl Rule for UlIndent {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let spaces = config
             .rule_options(self.id())
             .get_usize("indent")
@@ -71,7 +77,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        UlIndent.check(&doc, markdown, &LintConfig::default())
+        UlIndent.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]
@@ -83,6 +89,6 @@ mod tests {
     fn respects_configured_indent_width() {
         let config = LintConfig::from_toml_str("[rules.ul_indent]\nindent = 4\n").unwrap();
         let doc: mq_markdown::Markdown = "- one\n".parse().unwrap();
-        assert!(UlIndent.check(&doc, "- one\n", &config).is_empty());
+        assert!(UlIndent.check(&doc, "- one\n", &config, None).is_empty());
     }
 }

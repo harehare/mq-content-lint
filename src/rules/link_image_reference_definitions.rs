@@ -17,7 +17,13 @@ impl Rule for LinkImageReferenceDefinitions {
         Severity::Info
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let mut used = std::collections::HashSet::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let ident = match node {
@@ -66,7 +72,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        LinkImageReferenceDefinitions.check(&doc, markdown, &LintConfig::default())
+        LinkImageReferenceDefinitions.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

@@ -61,7 +61,13 @@ impl Rule for LinkFragments {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let slugs = collect_slugs(doc);
         let mut diagnostics = Vec::new();
 
@@ -94,7 +100,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        LinkFragments.check(&doc, markdown, &LintConfig::default())
+        LinkFragments.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

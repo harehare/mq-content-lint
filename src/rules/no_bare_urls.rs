@@ -52,7 +52,13 @@ impl Rule for NoBareUrls {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, _config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        _config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let mut code_ranges = Vec::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             if let Node::Code(code) = node
@@ -88,7 +94,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        NoBareUrls.check(&doc, markdown, &LintConfig::default())
+        NoBareUrls.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]

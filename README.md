@@ -39,7 +39,7 @@ scripts, not Markdown content.
 
 ## Features
 
-- **54 built-in rules** covering headings, lists, whitespace, code blocks, links/images, inline
+- **55 built-in rules** covering headings, lists, whitespace, code blocks, links/images, inline
   formatting, tables, and front matter. See `--list-rules` and `--explain <rule-id>`.
 - **Custom rules as [mq](https://github.com/harehare/mq) queries**: define project-specific
   checks in config without writing Rust, the one thing neither markdownlint nor rumdl offer.

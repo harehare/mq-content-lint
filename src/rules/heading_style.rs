@@ -61,7 +61,13 @@ impl Rule for HeadingStyle {
         Severity::Warning
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let options = config.rule_options(self.id());
         let configured = options.get_str("style").and_then(Style::parse);
 
@@ -138,7 +144,7 @@ mod tests {
 
     fn run(markdown: &str) -> Vec<Diagnostic> {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
-        HeadingStyle.check(&doc, markdown, &LintConfig::default())
+        HeadingStyle.check(&doc, markdown, &LintConfig::default(), None)
     }
 
     #[test]
@@ -170,7 +176,7 @@ mod tests {
     fn respects_configured_style() {
         let config = LintConfig::from_toml_str("[rules.heading_style]\nstyle = \"atx_closed\"\n").unwrap();
         let doc: mq_markdown::Markdown = "# One\n".parse().unwrap();
-        let diagnostics = HeadingStyle.check(&doc, "# One\n", &config);
+        let diagnostics = HeadingStyle.check(&doc, "# One\n", &config, None);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].fix.as_ref().unwrap().replacement, "# One #");
     }

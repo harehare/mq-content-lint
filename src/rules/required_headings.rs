@@ -24,7 +24,13 @@ impl Rule for RequiredHeadings {
         false
     }
 
-    fn check(&self, doc: &mq_markdown::Markdown, _source: &str, config: &LintConfig) -> Vec<Diagnostic> {
+    fn check(
+        &self,
+        doc: &mq_markdown::Markdown,
+        _source: &str,
+        config: &LintConfig,
+        _path: Option<&std::path::Path>,
+    ) -> Vec<Diagnostic> {
         let expected = config
             .rule_options(self.id())
             .get_str_array("headings")
@@ -73,7 +79,7 @@ mod tests {
         let doc: mq_markdown::Markdown = markdown.parse().unwrap();
         let list = headings.iter().map(|h| format!("{h:?}")).collect::<Vec<_>>().join(", ");
         let config = LintConfig::from_toml_str(&format!("[rules.required_headings]\nheadings = [{list}]\n")).unwrap();
-        RequiredHeadings.check(&doc, markdown, &config)
+        RequiredHeadings.check(&doc, markdown, &config, None)
     }
 
     #[test]
@@ -81,7 +87,7 @@ mod tests {
         let doc: mq_markdown::Markdown = "# Anything\n".parse().unwrap();
         assert!(
             RequiredHeadings
-                .check(&doc, "# Anything\n", &LintConfig::default())
+                .check(&doc, "# Anything\n", &LintConfig::default(), None)
                 .is_empty()
         );
     }
