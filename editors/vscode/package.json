@@ -2,7 +2,7 @@
   "name": "mq-content-lint",
   "displayName": "mq-content-lint",
   "description": "Lint Markdown content with mq-content-lint, a static content linter built on mq",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "harehare",
   "icon": "assets/icon.png",
   "license": "MIT",
