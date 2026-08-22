@@ -9,7 +9,7 @@ use crate::text::LineByteIndex;
 
 /// A machine-applicable rewrite: replace the source spanned by `range` with `replacement`. A
 /// zero-width `range` (see [`Range::at`]) is a pure insertion.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Fix {
     pub range: Range,
     pub replacement: String,

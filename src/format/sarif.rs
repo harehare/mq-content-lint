@@ -54,7 +54,7 @@ pub(super) fn write_sarif_report(w: &mut impl Write, results: &[(String, String,
     let custom_rule_ids: BTreeSet<&str> = results
         .iter()
         .flat_map(|(_, _source, items)| items.iter())
-        .filter(|item| matches!(item, ReportItem::Custom(_)))
+        .filter(|item| item.is_custom_rule())
         .map(|item| item.rule_id())
         .collect();
     rules.extend(

@@ -1,3 +1,4 @@
+mod cache;
 mod format;
 mod watch;
 
@@ -93,6 +94,18 @@ struct Cli {
     /// sense watching stdin. Runs until interrupted (Ctrl+C).
     #[arg(long)]
     watch: bool,
+
+    /// Cache lint results across runs, skipping a file whose content and the effective config
+    /// haven't changed since the last cached run. Ignored for `--diff` and stdin input, which
+    /// have nothing stable to key a cache entry on. The cache is invalidated automatically when
+    /// the config or the `mq-content-lint` version changes.
+    #[arg(long)]
+    cache: bool,
+
+    /// Path to the `--cache` file (default: `.mq-content-lint-cache.json` in the current
+    /// directory). Implies `--cache`.
+    #[arg(long, value_name = "PATH")]
+    cache_location: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy)]
@@ -233,6 +246,14 @@ fn lint_files(
     paths.sort();
     paths.dedup();
 
+    let mut cache = (cli.cache || cli.cache_location.is_some()).then(|| {
+        let path = cli
+            .cache_location
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(cache::DEFAULT_CACHE_LOCATION));
+        cache::LintCache::load(path, config.fingerprint())
+    });
+
     // Each file's read/fix/lint pipeline is independent (only file I/O and pure computation,
     // no shared mutable state), so it parallelizes cleanly across files with rayon.
     // `par_iter().map(..).collect()` preserves `paths`' order in the output regardless of which
@@ -241,7 +262,9 @@ fn lint_files(
     // reason.
     let outcomes: Vec<FileOutcome> = paths
         .par_iter()
-        .map(|path| -> io::Result<FileOutcome> { process_file(path, linter, config, min_severity, cli.fix, cli.diff) })
+        .map(|path| -> io::Result<FileOutcome> {
+            process_file(path, linter, config, cli.fix, cli.diff, cache.as_ref())
+        })
         .collect::<io::Result<Vec<_>>>()?;
 
     if cli.diff {
@@ -271,25 +294,43 @@ fn lint_files(
         }
     }
 
-    let had_diagnostics = outcomes.iter().any(|o| !o.diagnostics.is_empty());
+    // Diagnostics are cached unfiltered by severity, so a later run with a different
+    // `--min-severity` still benefits from today's cache entries.
+    if let Some(cache) = cache.as_mut() {
+        for (path, outcome) in paths.iter().zip(&outcomes) {
+            cache.set(path, &outcome.source, &outcome.diagnostics);
+        }
+        cache.save()?;
+    }
+
     let results: Vec<(String, String, Vec<ReportItem>)> = outcomes
         .into_iter()
-        .map(|o| (o.label, o.source, o.diagnostics))
+        .map(|o| {
+            let diagnostics = o
+                .diagnostics
+                .into_iter()
+                .filter(|item| item.severity() >= min_severity)
+                .collect();
+            (o.label, o.source, diagnostics)
+        })
         .collect();
+    let had_diagnostics = results.iter().any(|(_, _, d)| !d.is_empty());
     format::write_report(w, cli.format, &results)?;
 
     Ok(had_diagnostics)
 }
 
-/// One file's outcome from [`process_file`]: its diagnostics; when `--fix` changed it, how many
-/// fixes were applied (for the sequential "fixed N issues in ..." notice); when `--diff` would
-/// have changed it, the unified diff text (for the sequential diff printout). At most one of
-/// `fix_count`/`diff` is ever set, since `--fix` and `--diff` don't write in the same run.
+/// One file's outcome from [`process_file`]: its diagnostics (unfiltered by severity — see
+/// [`lint_files`]); when `--fix` changed it, how many fixes were applied (for the sequential
+/// "fixed N issues in ..." notice); when `--diff` would have changed it, the unified diff text
+/// (for the sequential diff printout). At most one of `fix_count`/`diff` is ever set, since
+/// `--fix` and `--diff` don't write in the same run.
 struct FileOutcome {
     label: String,
     /// The text `diagnostics` was computed against (the fixed text when `--fix` changed
-    /// something, the original otherwise) — what the `Text` report's snippets are drawn from.
-    /// Left empty when `diff` is set, since that branch never reports diagnostics.
+    /// something, the original otherwise) — what the `Text` report's snippets are drawn from,
+    /// and what `--cache` keys this outcome's entry on. Left empty when `diff` is set, since
+    /// that branch never reports diagnostics.
     source: String,
     diagnostics: Vec<ReportItem>,
     fix_count: Option<usize>,
@@ -297,21 +338,24 @@ struct FileOutcome {
 }
 
 /// Reads, optionally fixes, and lints a single file. Pure I/O plus computation with no access to
-/// shared state, so callers can run this across a rayon `par_iter()` safely.
+/// shared state (`cache` is read-only here — see [`lint_files`] for the write-back), so callers
+/// can run this across a rayon `par_iter()` safely.
 ///
 /// `fix` rewrites the file in place when changed, reusing [`fix_source`]'s own final-pass
 /// diagnostics for the report instead of linting the (already fully linted) result a second time.
 /// `diff` computes the same fix but never writes — it captures a unified diff instead, and skips
 /// building a diagnostic report entirely, since [`lint_files`]'s `--diff` branch never reads
 /// `FileOutcome::diagnostics`. If both are set, `diff` wins (no write); `--fix --diff` is accepted
-/// but behaves like `--diff` alone.
+/// but behaves like `--diff` alone. `cache` is only consulted on the plain (non-fix, non-diff)
+/// path — `--fix`'s result still gets written back to the cache by [`lint_files`], just not read
+/// from it, since a cache hit doesn't tell us whether the file still has a fix to apply.
 fn process_file(
     path: &Path,
     linter: &Linter,
     config: &LintConfig,
-    min_severity: Severity,
     fix: bool,
     diff: bool,
+    cache: Option<&cache::LintCache>,
 ) -> io::Result<FileOutcome> {
     let original = std::fs::read_to_string(path)
         .map_err(|e| io::Error::other(format!("reading file {}: {}", path.display(), e)))?;
@@ -330,7 +374,7 @@ fn process_file(
         });
     }
 
-    let (source, fix_count, items) = if fix {
+    let (source, fix_count, diagnostics) = if fix {
         let (fixed, count, items) = fix_source(&original, linter, config, Some(path))
             .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
         if fixed == original {
@@ -340,16 +384,13 @@ fn process_file(
                 .map_err(|e| io::Error::other(format!("writing file {}: {}", path.display(), e)))?;
             (fixed, Some(count), items)
         }
+    } else if let Some(items) = cache.and_then(|cache| cache.get(path, &original)) {
+        (original, None, items)
     } else {
         let items = lint_items(&original, linter, config, Some(path))
             .map_err(|e| io::Error::other(format!("parsing file {}: {}", path.display(), e)))?;
         (original, None, items)
     };
-
-    let diagnostics = items
-        .into_iter()
-        .filter(|item| item.severity() >= min_severity)
-        .collect();
 
     Ok(FileOutcome {
         label,
@@ -1074,6 +1115,17 @@ mod tests {
         assert!(!cli.diff);
     }
 
+    #[test]
+    fn test_cli_cache_flags() {
+        let cli = Cli::try_parse_from(["mq-content-lint", "--cache", "test.md"]).unwrap();
+        assert!(cli.cache);
+        assert!(cli.cache_location.is_none());
+
+        let cli = Cli::try_parse_from(["mq-content-lint", "--cache-location", "foo.json", "test.md"]).unwrap();
+        assert!(!cli.cache);
+        assert_eq!(cli.cache_location, Some(PathBuf::from("foo.json")));
+    }
+
     #[rstest]
     #[case(vec!["mq-content-lint"], OutputFormat::Text)]
     #[case(vec!["mq-content-lint", "--format", "text"], OutputFormat::Text)]
@@ -1217,7 +1269,7 @@ mod tests {
 
         let linter = Linter::with_default_rules();
         let config = LintConfig::default();
-        let outcome = process_file(&path, &linter, &config, Severity::Info, false, true).unwrap();
+        let outcome = process_file(&path, &linter, &config, false, true, None).unwrap();
 
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
@@ -1239,9 +1291,68 @@ mod tests {
 
         let linter = Linter::with_default_rules();
         let config = LintConfig::default();
-        let outcome = process_file(&path, &linter, &config, Severity::Info, false, true).unwrap();
+        let outcome = process_file(&path, &linter, &config, false, true, None).unwrap();
 
         assert!(outcome.diff.is_none());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_lint_files_with_cache_reports_the_same_diagnostics_on_a_cache_hit() {
+        let dir = std::env::temp_dir().join(format!("mq-content-lint-cache-hit-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.md"), "#Title\n").unwrap();
+
+        let cli = Cli::try_parse_from([
+            "mq-content-lint",
+            dir.to_str().unwrap(),
+            "--cache",
+            "--cache-location",
+            dir.join("cache.json").to_str().unwrap(),
+        ])
+        .unwrap();
+        let config = LintConfig::default();
+        let linter = Linter::with_default_rules();
+
+        let mut fresh = Vec::new();
+        let had_diagnostics = lint_files(&cli, &config, &linter, Severity::Info, &mut fresh).unwrap();
+        assert!(had_diagnostics);
+        assert!(dir.join("cache.json").exists());
+
+        let mut cached = Vec::new();
+        let had_diagnostics = lint_files(&cli, &config, &linter, Severity::Info, &mut cached).unwrap();
+        assert!(had_diagnostics);
+        assert_eq!(fresh, cached, "a cache hit should report identically to a fresh lint");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_lint_files_with_cache_detects_content_changes() {
+        let dir = std::env::temp_dir().join(format!("mq-content-lint-cache-invalidate-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.md");
+        std::fs::write(&file, "#Title\n").unwrap();
+
+        let cli = Cli::try_parse_from([
+            "mq-content-lint",
+            dir.to_str().unwrap(),
+            "--cache",
+            "--cache-location",
+            dir.join("cache.json").to_str().unwrap(),
+        ])
+        .unwrap();
+        let config = LintConfig::default();
+        let linter = Linter::with_default_rules();
+
+        assert!(lint_files(&cli, &config, &linter, Severity::Info, &mut Vec::new()).unwrap());
+
+        std::fs::write(&file, "# Title\n").unwrap();
+        assert!(
+            !lint_files(&cli, &config, &linter, Severity::Info, &mut Vec::new()).unwrap(),
+            "editing the file should invalidate its cache entry, not report the old diagnostics"
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

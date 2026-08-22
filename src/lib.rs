@@ -38,7 +38,7 @@ pub use config::LintConfig;
 pub use fix::Fix;
 pub use message::{LintMessage, RuleId};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Severity level for a lint diagnostic.
 ///
@@ -64,7 +64,7 @@ impl std::fmt::Display for Severity {
 
 /// A source location for a diagnostic or fix, 1-based like `mq_markdown::Position`, but `Copy`
 /// and serializable independent of the `json` feature on `mq-markdown`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Range {
     pub start_line: usize,
     pub start_column: usize,

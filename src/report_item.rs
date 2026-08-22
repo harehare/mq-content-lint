@@ -7,12 +7,16 @@
 //! need to show both kinds side by side, which is what this type (and [`lint`], which produces
 //! it) is for.
 
+use serde::{Deserialize, Serialize};
+
 use crate::custom_rules::{CustomDiagnostic, CustomRuleError};
-use crate::{Diagnostic, Fix, LintConfig, Linter, Range, Severity};
+use crate::{Diagnostic, Fix, LintConfig, Linter, Range, RuleId, Severity};
 
 pub enum ReportItem {
     Builtin(Diagnostic),
     Custom(CustomDiagnostic),
+    /// A diagnostic rehydrated from `--cache`'s on-disk store. See [`CachedDiagnostic`].
+    Cached(CachedDiagnostic),
 }
 
 impl ReportItem {
@@ -20,6 +24,7 @@ impl ReportItem {
         match self {
             ReportItem::Builtin(d) => d.severity,
             ReportItem::Custom(d) => d.severity,
+            ReportItem::Cached(d) => d.severity,
         }
     }
 
@@ -27,6 +32,7 @@ impl ReportItem {
         match self {
             ReportItem::Builtin(d) => d.range,
             ReportItem::Custom(d) => d.range,
+            ReportItem::Cached(d) => d.range,
         }
     }
 
@@ -35,6 +41,7 @@ impl ReportItem {
         match self {
             ReportItem::Builtin(d) => d.rule_id().as_str(),
             ReportItem::Custom(d) => &d.rule_id,
+            ReportItem::Cached(d) => &d.rule_id,
         }
     }
 
@@ -45,6 +52,8 @@ impl ReportItem {
         match self {
             ReportItem::Builtin(d) => d.rule_id().selector(),
             ReportItem::Custom(_) => None,
+            // A selector is a pure function of RuleId, so parsing the id string back recovers it.
+            ReportItem::Cached(d) => d.rule_id.parse::<RuleId>().ok().and_then(|id| id.selector()),
         }
     }
 
@@ -52,6 +61,7 @@ impl ReportItem {
         match self {
             ReportItem::Builtin(d) => d.text(),
             ReportItem::Custom(d) => d.message.clone(),
+            ReportItem::Cached(d) => d.message.clone(),
         }
     }
 
@@ -59,6 +69,7 @@ impl ReportItem {
         match self {
             ReportItem::Builtin(d) => d.help(),
             ReportItem::Custom(_) => None,
+            ReportItem::Cached(d) => d.help.clone(),
         }
     }
 
@@ -68,6 +79,16 @@ impl ReportItem {
         match self {
             ReportItem::Builtin(d) => d.fix.as_ref(),
             ReportItem::Custom(d) => d.fix.as_ref(),
+            ReportItem::Cached(d) => d.fix.as_ref(),
+        }
+    }
+
+    /// Whether this diagnostic came from a custom rule rather than a built-in one.
+    pub fn is_custom_rule(&self) -> bool {
+        match self {
+            ReportItem::Builtin(_) => false,
+            ReportItem::Custom(_) => true,
+            ReportItem::Cached(d) => d.rule_id.parse::<RuleId>().is_err(),
         }
     }
 }
@@ -81,6 +102,37 @@ impl From<Diagnostic> for ReportItem {
 impl From<CustomDiagnostic> for ReportItem {
     fn from(d: CustomDiagnostic) -> Self {
         ReportItem::Custom(d)
+    }
+}
+
+impl From<CachedDiagnostic> for ReportItem {
+    fn from(d: CachedDiagnostic) -> Self {
+        ReportItem::Cached(d)
+    }
+}
+
+/// A serializable diagnostic snapshot for `--cache`'s on-disk store. Stores pre-rendered
+/// `message`/`help` text rather than a [`crate::LintMessage`], which has no stable JSON form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CachedDiagnostic {
+    pub rule_id: String,
+    pub severity: Severity,
+    pub message: String,
+    pub help: Option<String>,
+    pub range: Option<Range>,
+    pub fix: Option<Fix>,
+}
+
+impl From<&ReportItem> for CachedDiagnostic {
+    fn from(item: &ReportItem) -> Self {
+        Self {
+            rule_id: item.rule_id().to_string(),
+            severity: item.severity(),
+            message: item.text(),
+            help: item.help(),
+            range: item.range(),
+            fix: item.fix().cloned(),
+        }
     }
 }
 

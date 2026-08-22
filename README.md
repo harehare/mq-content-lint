@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.svg" style="width: 128px; height: 128px;"/>
+  <img src="assets/logo.svg" width="128" height="128" alt="mq-content-lint logo"/>
 
 <h1>mq-content-lint</h1>
 
@@ -44,6 +44,8 @@ scripts, not Markdown content.
 - **Custom rules as [mq](https://github.com/harehare/mq) queries**: define project-specific
   checks in config without writing Rust, the one thing neither markdownlint nor rumdl offer.
 - **Autofix** via `--fix`, a dry-run diff via `--diff`, and `--watch` to re-lint on save.
+- **`--cache`** skips re-linting files whose content and config haven't changed since the last
+  run, for faster repeat runs on large repos and in CI.
 - **Cascading TOML config** (like ESLint's), `.editorconfig` integration, `.gitignore`-aware
   directory scanning, and inline `<!-- mq-content-lint-disable ... -->` comments.
 - **Machine-readable output**: `json`, `sarif` (GitHub code scanning), and `rdjson` (for
@@ -98,6 +100,10 @@ mq-content-lint --diff docs/
 
 # Re-lint whenever a watched file changes
 mq-content-lint --watch docs/
+
+# Skip re-linting files unchanged since the last run (default cache file:
+# .mq-content-lint-cache.json)
+mq-content-lint --cache docs/
 
 # Machine-readable output
 mq-content-lint --format json docs/ > report.json

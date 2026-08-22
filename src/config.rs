@@ -330,6 +330,70 @@ impl LintConfig {
             _ => RuleOptions::default(),
         }
     }
+
+    /// A hash of every setting that affects lint output. Two configs with the same fingerprint
+    /// always produce the same diagnostics for the same input; used by `--cache` to invalidate
+    /// cached results when the config changes, without deriving `Hash`/`Serialize` for
+    /// `toml::Table` (used by [`RuleOptions::extra`]).
+    pub fn fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+
+        let mut rules: Vec<_> = self.rules.iter().collect();
+        rules.sort_by_key(|(id, _)| **id);
+
+        let mut repr = String::new();
+        for (id, setting) in rules {
+            repr.push_str(id.as_str());
+            repr.push(':');
+            write_rule_setting(&mut repr, setting);
+            repr.push(';');
+        }
+        repr.push_str("|front_matter:");
+        repr.push_str(&self.required_front_matter_keys.join(","));
+        repr.push_str("|ignore:");
+        repr.push_str(&self.ignore.join(","));
+        repr.push_str("|editorconfig_max_line_length:");
+        if let Some(n) = self.editorconfig_max_line_length {
+            repr.push_str(&n.to_string());
+        }
+        repr.push_str("|custom_rules:");
+        for rule in &self.custom_rules {
+            repr.push_str(&rule.id);
+            repr.push(':');
+            repr.push_str(&rule.query);
+            repr.push(':');
+            repr.push_str(&rule.message);
+            repr.push(':');
+            repr.push_str(&rule.severity.to_string());
+            repr.push(':');
+            repr.push_str(rule.fix.as_deref().unwrap_or(""));
+            repr.push(';');
+        }
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        repr.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+/// Canonical string form of a rule setting, for [`LintConfig::fingerprint`].
+fn write_rule_setting(out: &mut String, setting: &RuleSetting) {
+    match setting {
+        RuleSetting::Enabled(b) => out.push_str(&format!("bool={b}")),
+        RuleSetting::Severity(s) => out.push_str(&format!("severity={s}")),
+        RuleSetting::Options(opts) => {
+            out.push_str(&format!(
+                "options={},{}",
+                opts.enabled.map_or(String::new(), |b| b.to_string()),
+                opts.severity.map_or(String::new(), |s| s.to_string())
+            ));
+            let mut keys: Vec<_> = opts.extra.keys().collect();
+            keys.sort();
+            for key in keys {
+                out.push_str(&format!(",{key}={}", opts.extra[key]));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -406,6 +470,35 @@ mod tests {
         )
         .unwrap();
         assert!(!config.is_rule_enabled(RuleId::LineLength));
+    }
+
+    #[test]
+    fn fingerprint_is_stable_for_the_same_config() {
+        let a = LintConfig::from_toml_str("[rules]\nline_length = \"error\"\n").unwrap();
+        let b = LintConfig::from_toml_str("[rules]\nline_length = \"error\"\n").unwrap();
+        assert_eq!(a.fingerprint(), b.fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_changes_when_a_rule_setting_changes() {
+        let a = LintConfig::from_toml_str("[rules]\nline_length = \"error\"\n").unwrap();
+        let b = LintConfig::from_toml_str("[rules]\nline_length = \"warning\"\n").unwrap();
+        assert_ne!(a.fingerprint(), b.fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_changes_when_a_custom_rule_is_added() {
+        let a = LintConfig::default();
+        let b = LintConfig::from_toml_str(
+            r#"
+            [[custom_rules]]
+            id = "no_todo"
+            query = "select(.h)"
+            message = "found a heading"
+            "#,
+        )
+        .unwrap();
+        assert_ne!(a.fingerprint(), b.fingerprint());
     }
 
     #[test]
