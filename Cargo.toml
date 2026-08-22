@@ -1,6 +1,6 @@
 [package]
 name = "mq-content-lint"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 categories = ["command-line-utilities", "text-processing"]
