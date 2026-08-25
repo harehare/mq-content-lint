@@ -29,8 +29,8 @@ jobs:
             ext: ""
             asset_name: aarch64-apple-darwin
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} --all-features
       - name: Rename artifacts
@@ -38,7 +38,7 @@ jobs:
           mv target/${{ matrix.target }}/release/mq-content-lint${{ matrix.ext }} target/${{ matrix.target }}/release/mq-content-lint-${{ matrix.asset_name }}${{ matrix.ext }}
           mv target/${{ matrix.target }}/release/mq-content-lint-lsp${{ matrix.ext }} target/${{ matrix.target }}/release/mq-content-lint-lsp-${{ matrix.asset_name }}${{ matrix.ext }}
       - name: Upload artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mq-content-lint-${{ matrix.asset_name }}
           path: |
@@ -70,7 +70,7 @@ jobs:
           mv checksums.txt ./checksums/checksums.txt
       - name: Create Release
         id: create_release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: target/*/*
           draft: true

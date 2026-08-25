@@ -63,7 +63,7 @@ runs:
     - name: Cache cargo-installed mq-content-lint
       id: cache
       if: steps.which.outputs.found != 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cargo/bin/mq-content-lint${{ runner.os == 'Windows' && '.exe' || '' }}
         key: mq-content-lint-bin-${{ runner.os }}-${{ inputs.version || 'latest' }}
