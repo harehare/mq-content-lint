@@ -34,3 +34,13 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+  lint-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint this repo's own docs with mq-content-lint
+        uses: harehare/mq-content-lint@v0.1.3
+        with:
+          path: .
