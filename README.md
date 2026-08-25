@@ -133,6 +133,10 @@ change. Not every rule can auto-fix; see `--list-rules`'s "Fix?" column or `--ex
     path: docs/
 ```
 
+Diagnostics are also written to the workflow run's Job Summary as a Markdown table, regardless of
+`format`, so results are visible without opening logs (skipped when `format: markdown`, to avoid
+duplicating it).
+
 Pass `fix: 'true'` to auto-fix instead of just reporting, or set `format: sarif` and wire the
 `sarif-file` output into `github/codeql-action/upload-sarif`. See `action.yml` for the full list
 of inputs/outputs.

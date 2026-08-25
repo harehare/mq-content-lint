@@ -58,6 +58,9 @@ jobs:
           echo "expected the action to fail on fixture/bad.md's diagnostic" >&2
           exit 1
 
+      - name: Assert the job summary got a diagnostics table
+        run: grep -q '| fixture/bad.md |' "$GITHUB_STEP_SUMMARY"
+
       - name: Run the action (sarif format)
         id: sarif
         uses: ./

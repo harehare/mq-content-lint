@@ -316,6 +316,9 @@ fn lint_files(
         .collect();
     let had_diagnostics = results.iter().any(|(_, _, d)| !d.is_empty());
     format::write_report(w, cli.format, &results)?;
+    // Skipped in test builds: avoids polluting this crate's own CI job summary with fixture data.
+    #[cfg(not(test))]
+    format::write_github_summary(cli.format, &results)?;
 
     Ok(had_diagnostics)
 }
