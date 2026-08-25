@@ -128,7 +128,7 @@ change. Not every rule can auto-fix; see `--list-rules`'s "Fix?" column or `--ex
 ### GitHub Actions
 
 ```yaml
-- uses: harehare/mq-content-lint@v1
+- uses: harehare/mq-content-lint@v0.1.3
   with:
     path: docs/
 ```
@@ -142,7 +142,7 @@ of inputs/outputs.
 ```yaml
 repos:
   - repo: https://github.com/harehare/mq-content-lint
-    rev: v1.0.0 # a tag; see this repo's releases for the latest
+    rev: v0.1.3 # a tag; see this repo's releases for the latest
     hooks:
       - id: mq-content-lint       # report only
       # - id: mq-content-lint-fix  # or auto-fix on commit instead
