@@ -8,8 +8,8 @@
 //! The bare shortcut form `[text]` (no second bracket) is intentionally not checked here: it's
 //! indistinguishable from ordinary bracketed prose without much higher false-positive risk.
 //!
-//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s — see
-//! [`super::no_space_in_code`]'s doc comment — so `position.start.column` is converted through
+//! `mq_markdown::Position::column` counts UTF-16 code units, not `char`s — see
+//! [`super::no_space_in_code`]'s doc comment — so `(position.start.column as usize)` is converted through
 //! [`crate::text::LineByteIndex::char_column`] before it's combined with
 //! `find_reference_patterns`'s char-counted offsets, or the two would silently misalign on text
 //! containing multi-byte characters.
@@ -90,14 +90,16 @@ impl Rule for ReferenceLinksImages {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Text(text) = node else { return };
             let Some(position) = &text.position else { return };
-            if position.start.line != position.end.line {
+            if (position.start.line as usize) != (position.end.line as usize) {
                 return;
             }
-            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+            let Some(start_column) =
+                byte_index.char_column(position.start.line as usize, position.start.column as usize)
+            else {
                 return;
             };
             for (start, end, label) in find_reference_patterns(&text.value) {
-                let range = Range::single_line(position.start.line, start_column + start, start_column + end);
+                let range = Range::single_line(position.start.line as usize, start_column + start, start_column + end);
                 diagnostics.push(
                     Diagnostic::new(LintMessage::ReferenceLinksImages { label }, self.default_severity())
                         .with_range(range),

@@ -2,7 +2,7 @@
 //!
 //! `mq-markdown`'s heading position always reports column 1 regardless of the (CommonMark-legal,
 //! up to 3 spaces) leading indentation in the source, so this inspects the raw line rather than
-//! `Position::start.column`.
+//! `Position::(start.column as usize)`.
 
 use mq_markdown::Node;
 
@@ -33,12 +33,12 @@ impl Rule for HeadingStartLeft {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Heading(heading) = node else { return };
             let Some(position) = &heading.position else { return };
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 return;
             };
             let indent = line.len() - line.trim_start().len();
             if indent > 0 {
-                let range = Range::single_line(position.start.line, 1, indent + 1);
+                let range = Range::single_line(position.start.line as usize, 1, indent + 1);
                 diagnostics.push(
                     Diagnostic::new(LintMessage::HeadingStartLeft, self.default_severity())
                         .with_range(range)

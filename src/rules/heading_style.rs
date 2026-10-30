@@ -78,7 +78,7 @@ impl Rule for HeadingStyle {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Heading(heading) = node else { return };
             let Some(position) = &heading.position else { return };
-            let Some(line_text) = lines.get(position.start.line) else {
+            let Some(line_text) = lines.get(position.start.line as usize) else {
                 return;
             };
 
@@ -95,7 +95,13 @@ impl Rule for HeadingStyle {
                 )
                 .with_range(position.clone());
 
-                if let Some(fix) = rewrite(line_text, position.start.line, heading.depth, found, expected_style) {
+                if let Some(fix) = rewrite(
+                    line_text,
+                    position.start.line as usize,
+                    heading.depth.get(),
+                    found,
+                    expected_style,
+                ) {
                     diagnostic = diagnostic.with_fix(fix);
                 }
                 diagnostics.push(diagnostic);

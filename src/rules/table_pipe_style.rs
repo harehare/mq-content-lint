@@ -60,17 +60,17 @@ impl Rule for TablePipeStyle {
                 _ => continue,
             };
             let Some(position) = position else { continue };
-            if !seen_lines.insert(position.start.line) {
+            if !seen_lines.insert(position.start.line as usize) {
                 continue;
             }
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 continue;
             };
             let found = detect_style(line);
             let expected_style = expected.get_or_insert_with(|| found.to_string()).clone();
 
             if found != expected_style {
-                let range = Range::single_line(position.start.line, 1, line.chars().count() + 1);
+                let range = Range::single_line(position.start.line as usize, 1, line.chars().count() + 1);
                 diagnostics.push(
                     Diagnostic::new(
                         LintMessage::TablePipeStyle {

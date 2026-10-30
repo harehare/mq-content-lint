@@ -34,7 +34,7 @@ impl Rule for NoMissingSpaceClosedAtx {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Heading(heading) = node else { return };
             let Some(position) = &heading.position else { return };
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 return;
             };
             let trimmed_end = line.trim_end();
@@ -47,8 +47,8 @@ impl Rule for NoMissingSpaceClosedAtx {
                 let column = core.chars().count() + 1;
                 diagnostics.push(
                     Diagnostic::new(LintMessage::NoMissingSpaceClosedAtx, self.default_severity())
-                        .with_range(Range::at(position.start.line, column))
-                        .with_fix(Fix::new(Range::at(position.start.line, column), " ")),
+                        .with_range(Range::at(position.start.line as usize, column))
+                        .with_fix(Fix::new(Range::at(position.start.line as usize, column), " ")),
                 );
             }
         });

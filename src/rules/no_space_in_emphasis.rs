@@ -65,7 +65,7 @@ impl Rule for NoSpaceInEmphasis {
             if let Node::Code(code) = node
                 && let Some(position) = &code.position
             {
-                code_ranges.push((position.start.line, position.end.line));
+                code_ranges.push(((position.start.line as usize), (position.end.line as usize)));
             }
         });
         let code_lines = crate::text::CodeBlockLines::new(code_ranges);

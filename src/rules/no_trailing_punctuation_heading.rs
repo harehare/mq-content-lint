@@ -38,7 +38,7 @@ impl Rule for NoTrailingPunctuationHeading {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Heading(heading) = node else { return };
             let Some(position) = &heading.position else { return };
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 return;
             };
             let trimmed = line.trim_end();
@@ -52,9 +52,9 @@ impl Rule for NoTrailingPunctuationHeading {
                         LintMessage::NoTrailingPunctuationHeading { punctuation: last },
                         self.default_severity(),
                     )
-                    .with_range(Range::single_line(position.start.line, column, column + 1))
+                    .with_range(Range::single_line(position.start.line as usize, column, column + 1))
                     .with_fix(Fix::new(
-                        Range::single_line(position.start.line, column, column + 1),
+                        Range::single_line(position.start.line as usize, column, column + 1),
                         "",
                     )),
                 );

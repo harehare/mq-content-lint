@@ -29,7 +29,7 @@ impl Rule for NoMultipleSpaceClosedAtx {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Heading(heading) = node else { return };
             let Some(position) = &heading.position else { return };
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 return;
             };
             let trimmed_end = line.trim_end();
@@ -45,9 +45,9 @@ impl Rule for NoMultipleSpaceClosedAtx {
                 let end_col = start_col + space_len;
                 diagnostics.push(
                     Diagnostic::new(LintMessage::NoMultipleSpaceClosedAtx, self.default_severity())
-                        .with_range(Range::single_line(position.start.line, start_col, end_col))
+                        .with_range(Range::single_line(position.start.line as usize, start_col, end_col))
                         .with_fix(Fix::new(
-                            Range::single_line(position.start.line, start_col, end_col),
+                            Range::single_line(position.start.line as usize, start_col, end_col),
                             " ",
                         )),
                 );

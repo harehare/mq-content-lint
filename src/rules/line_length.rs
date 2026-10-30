@@ -48,7 +48,7 @@ impl Rule for LineLength {
                 if let Node::Code(code) = node
                     && let Some(position) = &code.position
                 {
-                    ranges.push((position.start.line, position.end.line));
+                    ranges.push(((position.start.line as usize), (position.end.line as usize)));
                 }
             });
             ranges

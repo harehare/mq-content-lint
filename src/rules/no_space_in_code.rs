@@ -3,8 +3,8 @@
 //! with one, so this inspects the raw source (not [`mq_markdown::CodeInline::value`], which has
 //! that normalization already applied) to catch any left over.
 //!
-//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s (confirmed empirically — e.g.
-//! a code span containing "従うように" reports an `end.column` matching the line's byte length,
+//! `mq_markdown::Position::column` counts UTF-16 code units, not `char`s (confirmed empirically — e.g.
+//! a code span containing "従うように" reports an `(end.column as usize)` matching the line's byte length,
 //! not its character count). Every column here is converted through
 //! [`crate::text::LineByteIndex::char_column`] before use, so it lines up with `Range`/
 //! `crate::fix::slice`'s char-counted convention; skipping that conversion is what used to panic
@@ -38,16 +38,19 @@ impl Rule for NoSpaceInCode {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::CodeInline(_) = node else { return };
             let Some(position) = node.position() else { return };
-            if position.start.line != position.end.line {
+            if (position.start.line as usize) != (position.end.line as usize) {
                 return;
             }
-            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+            let Some(start_column) =
+                byte_index.char_column(position.start.line as usize, position.start.column as usize)
+            else {
                 return;
             };
-            let Some(end_column) = byte_index.char_column(position.end.line, position.end.column) else {
+            let Some(end_column) = byte_index.char_column(position.end.line as usize, position.end.column as usize)
+            else {
                 return;
             };
-            let span = Range::single_line(position.start.line, start_column, end_column);
+            let span = Range::single_line(position.start.line as usize, start_column, end_column);
             let Some(raw) = crate::fix::slice(source, &byte_index, span) else {
                 return;
             };
@@ -59,7 +62,7 @@ impl Rule for NoSpaceInCode {
             let trimmed = inner.trim_matches(' ');
             if inner != trimmed && !trimmed.is_empty() {
                 let range = Range::single_line(
-                    position.start.line,
+                    position.start.line as usize,
                     start_column + backtick_len,
                     end_column - backtick_len,
                 );

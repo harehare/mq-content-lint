@@ -93,10 +93,10 @@ impl Range {
 impl From<mq_markdown::Position> for Range {
     fn from(position: mq_markdown::Position) -> Self {
         Self {
-            start_line: position.start.line,
-            start_column: position.start.column,
-            end_line: position.end.line,
-            end_column: position.end.column,
+            start_line: (position.start.line as usize),
+            start_column: (position.start.column as usize),
+            end_line: (position.end.line as usize),
+            end_column: (position.end.column as usize),
         }
     }
 }

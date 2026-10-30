@@ -43,12 +43,15 @@ impl Rule for RequiredHeadings {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             if let Node::Heading(heading) = node {
                 headings.push((
-                    format!("{} {}", "#".repeat(heading.depth as usize), node.value()),
+                    format!("{} {}", "#".repeat(usize::from(heading.depth)), node.value()),
                     heading.position.clone(),
                 ));
             }
         });
-        headings.sort_by_key(|(_, pos)| pos.as_ref().map(|p| (p.start.line, p.start.column)));
+        headings.sort_by_key(|(_, pos)| {
+            pos.as_ref()
+                .map(|p| ((p.start.line as usize), (p.start.column as usize)))
+        });
         let found: Vec<String> = headings.iter().map(|(text, _)| text.clone()).collect();
 
         let matches = found.len() == expected.len() && found.iter().zip(&expected).all(|(f, e)| e == "*" || f == e);

@@ -50,7 +50,7 @@ impl Rule for ListMarkerSpace {
         for node in &doc.nodes {
             let Node::List(list) = node else { continue };
             let Some(position) = &list.position else { continue };
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 continue;
             };
             let indent = line.len() - line.trim_start().len();
@@ -60,7 +60,7 @@ impl Rule for ListMarkerSpace {
 
             if space_len != expected && !after.trim().is_empty() {
                 let start_col = indent + marker + 1;
-                let range = Range::single_line(position.start.line, start_col, start_col + space_len);
+                let range = Range::single_line(position.start.line as usize, start_col, start_col + space_len);
                 diagnostics.push(
                     Diagnostic::new(
                         LintMessage::ListMarkerSpace {

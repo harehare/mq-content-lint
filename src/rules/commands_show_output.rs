@@ -36,8 +36,8 @@ impl Rule for CommandsShowOutput {
             let mut diagnostic = Diagnostic::new(LintMessage::CommandsShowOutput, self.default_severity());
             if let Some(position) = &code.position {
                 diagnostic = diagnostic.with_range(position.clone());
-                let content_start = position.start.line + 1;
-                let content_end = position.end.line.saturating_sub(1);
+                let content_start = (position.start.line as usize) + 1;
+                let content_end = (position.end.line as usize).saturating_sub(1);
                 if content_end >= content_start {
                     let stripped: String = code
                         .value

@@ -1,7 +1,7 @@
 //! MD007: an unordered sub-list item should be indented by a fixed number of spaces per nesting
 //! level (`[rules.ul_indent] indent`, default 2), relative to the top level at 0.
 //!
-//! Uses the raw line's leading whitespace, not `Position::start.column` — see
+//! Uses the raw line's leading whitespace, not `Position::(start.column as usize)` — see
 //! [`super::list_indent`]'s docs for why.
 
 use mq_markdown::Node;
@@ -42,14 +42,14 @@ impl Rule for UlIndent {
                 continue;
             }
             let Some(position) = &list.position else { continue };
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 continue;
             };
             let indent = line.len() - line.trim_start().len();
             let expected = list.level as usize * spaces;
 
             if indent != expected {
-                let indent_range = Range::single_line(position.start.line, 1, indent + 1);
+                let indent_range = Range::single_line(position.start.line as usize, 1, indent + 1);
                 diagnostics.push(
                     Diagnostic::new(
                         LintMessage::UlIndent {

@@ -2,8 +2,8 @@
 //! blank lines) looks like it was meant to be a heading. Not auto-fixable — promoting it to a
 //! heading requires picking a level, which is an editorial call.
 //!
-//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s — see
-//! [`super::no_space_in_code`]'s doc comment — so `position.start.column`/`.end.column` are
+//! `mq_markdown::Position::column` counts UTF-16 code units, not `char`s — see
+//! [`super::no_space_in_code`]'s doc comment — so `(position.start.column as usize)`/`.(end.column as usize)` are
 //! converted through [`crate::text::LineByteIndex::char_column`] before indexing into the line's
 //! `char`s, or the two would silently misalign on a line containing multi-byte characters.
 
@@ -43,16 +43,19 @@ impl Rule for NoEmphasisAsHeading {
                 continue;
             }
             let Some(position) = node.position() else { continue };
-            if position.start.line != position.end.line {
+            if (position.start.line as usize) != (position.end.line as usize) {
                 continue;
             }
-            let Some(line) = lines.get(position.start.line - 1) else {
+            let Some(line) = lines.get((position.start.line as usize) - 1) else {
                 continue;
             };
-            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+            let Some(start_column) =
+                byte_index.char_column(position.start.line as usize, position.start.column as usize)
+            else {
                 continue;
             };
-            let Some(end_column) = byte_index.char_column(position.end.line, position.end.column) else {
+            let Some(end_column) = byte_index.char_column(position.end.line as usize, position.end.column as usize)
+            else {
                 continue;
             };
             let chars: Vec<char> = line.chars().collect();

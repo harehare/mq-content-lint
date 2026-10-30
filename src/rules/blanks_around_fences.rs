@@ -32,8 +32,8 @@ impl Rule for BlanksAroundFences {
                 return;
             }
             let Some(position) = &code.position else { return };
-            let start = position.start.line;
-            let end = position.end.line;
+            let start = position.start.line as usize;
+            let end = position.end.line as usize;
 
             if start > 1 && lines.get(start - 2).is_some_and(|l| !l.trim().is_empty()) {
                 diagnostics.push(

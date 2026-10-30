@@ -3,7 +3,7 @@
 //! items; a non-list block resets tracking, so unrelated lists elsewhere in the document don't
 //! have to agree with each other.
 //!
-//! Uses the raw line's leading whitespace, not `Position::start.column` — a list item's position
+//! Uses the raw line's leading whitespace, not `Position::(start.column as usize)` — a list item's position
 //! in `mq-markdown` points at the start of its *content* (after the marker and its trailing
 //! space), not the start of the marker itself.
 
@@ -42,14 +42,14 @@ impl Rule for ListIndent {
                 continue;
             };
             let Some(position) = &list.position else { continue };
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 continue;
             };
             let indent = line.len() - line.trim_start().len();
             let expected = *expected_by_level.entry(list.level).or_insert(indent);
 
             if indent != expected {
-                let indent_range = Range::single_line(position.start.line, 1, indent + 1);
+                let indent_range = Range::single_line(position.start.line as usize, 1, indent + 1);
                 diagnostics.push(
                     Diagnostic::new(
                         LintMessage::ListIndent {

@@ -126,20 +126,20 @@ fn tables(doc: &mq_markdown::Markdown) -> Vec<Vec<Row>> {
         match node {
             Node::TableCell(cell) => {
                 if let Some(position) = &cell.position
-                    && seen.insert(position.start.line)
+                    && seen.insert(position.start.line as usize)
                 {
                     current.push(Row {
-                        line: position.start.line,
+                        line: (position.start.line as usize),
                         is_delimiter: false,
                     });
                 }
             }
             Node::TableAlign(align) => {
                 if let Some(position) = &align.position
-                    && seen.insert(position.start.line)
+                    && seen.insert(position.start.line as usize)
                 {
                     current.push(Row {
-                        line: position.start.line,
+                        line: (position.start.line as usize),
                         is_delimiter: true,
                     });
                 }

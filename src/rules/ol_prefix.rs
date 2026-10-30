@@ -63,10 +63,10 @@ impl Rule for OlPrefix {
                     break;
                 }
                 if let Some(position) = &list.position
-                    && let Some(line) = lines.get(position.start.line)
+                    && let Some(line) = lines.get(position.start.line as usize)
                     && let Some(prefix) = parse_prefix(line)
                 {
-                    items.push((position.start.line, prefix));
+                    items.push(((position.start.line as usize), prefix));
                 }
                 j += 1;
             }

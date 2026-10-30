@@ -44,8 +44,8 @@ impl Rule for BlanksAroundTables {
             }
             let block_end = j - 1;
 
-            let start_line = doc.nodes[block_start].position().map(|p| p.start.line);
-            let end_line = doc.nodes[block_end].position().map(|p| p.end.line);
+            let start_line = doc.nodes[block_start].position().map(|p| p.start.line as usize);
+            let end_line = doc.nodes[block_end].position().map(|p| p.end.line as usize);
 
             if let Some(start) = start_line
                 && start > 1

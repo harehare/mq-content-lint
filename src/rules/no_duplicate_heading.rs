@@ -36,7 +36,10 @@ impl Rule for NoDuplicateHeading {
                 headings.push((node.value(), heading.position.clone()));
             }
         });
-        headings.sort_by_key(|(_, pos)| pos.as_ref().map(|p| (p.start.line, p.start.column)));
+        headings.sort_by_key(|(_, pos)| {
+            pos.as_ref()
+                .map(|p| ((p.start.line as usize), (p.start.column as usize)))
+        });
 
         let mut seen = HashSet::new();
         let mut diagnostics = Vec::new();

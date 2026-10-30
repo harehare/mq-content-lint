@@ -6,7 +6,7 @@
 //! Not auto-fixable — converting between styles can need information (a label, a URL) this rule
 //! doesn't have.
 //!
-//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s — see
+//! `mq_markdown::Position::column` counts UTF-16 code units, not `char`s — see
 //! [`super::no_space_in_code`]'s doc comment — so `position` is converted to a char-counted
 //! `Range` through [`crate::text::LineByteIndex::char_column`] before it's passed to
 //! [`crate::fix::slice`], or a link/image containing multi-byte text would misalign the raw
@@ -73,16 +73,19 @@ impl Rule for LinkImageStyle {
                 _ => return,
             };
             let Some(position) = position else { return };
-            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+            let Some(start_column) =
+                byte_index.char_column(position.start.line as usize, position.start.column as usize)
+            else {
                 return;
             };
-            let Some(end_column) = byte_index.char_column(position.end.line, position.end.column) else {
+            let Some(end_column) = byte_index.char_column(position.end.line as usize, position.end.column as usize)
+            else {
                 return;
             };
             let range = Range {
-                start_line: position.start.line,
+                start_line: (position.start.line as usize),
                 start_column,
-                end_line: position.end.line,
+                end_line: (position.end.line as usize),
                 end_column,
             };
             let Some(raw) = crate::fix::slice(source, &byte_index, range) else {

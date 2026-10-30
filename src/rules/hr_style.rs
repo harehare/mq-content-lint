@@ -32,14 +32,14 @@ impl Rule for HrStyle {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::HorizontalRule(_) = node else { return };
             let Some(position) = node.position() else { return };
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 return;
             };
             let found = line.trim().to_string();
             let expected_style = expected.get_or_insert_with(|| found.clone()).clone();
 
             if found != expected_style {
-                let range = Range::single_line(position.start.line, 1, line.chars().count() + 1);
+                let range = Range::single_line(position.start.line as usize, 1, line.chars().count() + 1);
                 diagnostics.push(
                     Diagnostic::new(
                         LintMessage::HrStyle {

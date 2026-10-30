@@ -45,7 +45,7 @@ impl Rule for UlStyle {
                 continue;
             }
             let Some(position) = &list.position else { continue };
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 continue;
             };
             let Some(marker) = line.trim_start().chars().next().filter(|c| "-*+".contains(*c)) else {
@@ -64,9 +64,9 @@ impl Rule for UlStyle {
                         },
                         self.default_severity(),
                     )
-                    .with_range(Range::single_line(position.start.line, column, column + 1))
+                    .with_range(Range::single_line(position.start.line as usize, column, column + 1))
                     .with_fix(Fix::new(
-                        Range::single_line(position.start.line, column, column + 1),
+                        Range::single_line(position.start.line as usize, column, column + 1),
                         expected_char.to_string(),
                     )),
                 );

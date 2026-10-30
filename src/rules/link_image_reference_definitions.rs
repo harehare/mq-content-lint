@@ -51,9 +51,9 @@ impl Rule for LinkImageReferenceDefinitions {
             );
             if let Some(position) = &def.position {
                 diagnostic = diagnostic.with_range(position.clone());
-                let end_line = position.end.line;
+                let end_line = position.end.line as usize;
                 let fix_range = Range {
-                    start_line: position.start.line,
+                    start_line: (position.start.line as usize),
                     start_column: 1,
                     end_line: (end_line + 1).min(total_lines + 1),
                     end_column: 1,

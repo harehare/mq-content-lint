@@ -35,12 +35,15 @@ impl Rule for HeadingHierarchySkip {
         let mut headings: Vec<(u8, Option<mq_markdown::Position>)> = Vec::new();
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             if let Node::Heading(heading) = node {
-                headings.push((heading.depth, heading.position.clone()));
+                headings.push((heading.depth.get(), heading.position.clone()));
             }
         });
         // Headings found while descending into a container (e.g. one nested in a blockquote)
         // aren't guaranteed to come out in document order, so sort explicitly.
-        headings.sort_by_key(|(_, pos)| pos.as_ref().map(|p| (p.start.line, p.start.column)));
+        headings.sort_by_key(|(_, pos)| {
+            pos.as_ref()
+                .map(|p| ((p.start.line as usize), (p.start.column as usize)))
+        });
 
         let mut diagnostics = Vec::new();
         let mut previous_depth: Option<u8> = None;

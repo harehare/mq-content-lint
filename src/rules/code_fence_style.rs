@@ -51,7 +51,7 @@ impl Rule for CodeFenceStyle {
                 return;
             }
             let Some(position) = &code.position else { return };
-            let Some(line) = lines.get(position.start.line) else {
+            let Some(line) = lines.get(position.start.line as usize) else {
                 return;
             };
             let Some(found) = line.trim_start().chars().next().filter(|c| *c == '`' || *c == '~') else {

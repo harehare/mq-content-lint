@@ -28,7 +28,7 @@ impl Rule for NoMultipleSpaceBlockquote {
             if let Node::Blockquote(bq) = node
                 && let Some(position) = &bq.position
             {
-                ranges.push((position.start.line, position.end.line));
+                ranges.push(((position.start.line as usize), (position.end.line as usize)));
             }
         });
 

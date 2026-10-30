@@ -36,7 +36,10 @@ impl Rule for SingleH1 {
                 h1s.push(heading.position.clone());
             }
         });
-        h1s.sort_by_key(|pos| pos.as_ref().map(|p| (p.start.line, p.start.column)));
+        h1s.sort_by_key(|pos| {
+            pos.as_ref()
+                .map(|p| ((p.start.line as usize), (p.start.column as usize)))
+        });
 
         h1s.into_iter()
             .skip(1)

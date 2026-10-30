@@ -1,7 +1,7 @@
 //! MD039: spaces just inside a link's text brackets (`[ text ](url)` instead of `[text](url)`).
 //!
-//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s — see
-//! [`super::no_space_in_code`]'s doc comment — so `position.start.column` is converted through
+//! `mq_markdown::Position::column` counts UTF-16 code units, not `char`s — see
+//! [`super::no_space_in_code`]'s doc comment — so `(position.start.column as usize)` is converted through
 //! [`crate::text::LineByteIndex::char_column`] before it's combined with the char-counted offsets
 //! this rule computes itself, or the two would silently misalign on link text containing
 //! multi-byte characters.
@@ -34,16 +34,19 @@ impl Rule for NoSpaceInLinks {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Link(link) = node else { return };
             let Some(position) = &link.position else { return };
-            if position.start.line != position.end.line {
+            if (position.start.line as usize) != (position.end.line as usize) {
                 return;
             }
-            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+            let Some(start_column) =
+                byte_index.char_column(position.start.line as usize, position.start.column as usize)
+            else {
                 return;
             };
-            let Some(end_column) = byte_index.char_column(position.end.line, position.end.column) else {
+            let Some(end_column) = byte_index.char_column(position.end.line as usize, position.end.column as usize)
+            else {
                 return;
             };
-            let span = Range::single_line(position.start.line, start_column, end_column);
+            let span = Range::single_line(position.start.line as usize, start_column, end_column);
             let Some(raw) = crate::fix::slice(source, &byte_index, span) else {
                 return;
             };
@@ -56,7 +59,7 @@ impl Rule for NoSpaceInLinks {
             if inner != trimmed && !inner.trim().is_empty() {
                 let start_col = start_column + raw[..open + 1].chars().count();
                 let end_col = start_column + raw[..close].chars().count();
-                let range = Range::single_line(position.start.line, start_col, end_col);
+                let range = Range::single_line(position.start.line as usize, start_col, end_col);
                 diagnostics.push(
                     Diagnostic::new(LintMessage::NoSpaceInLinks, self.default_severity())
                         .with_range(range)

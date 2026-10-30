@@ -2,7 +2,7 @@
 //! `[rules.emphasis_style] style` accepts `"consistent"` (default), `"asterisk"`, or
 //! `"underscore"`.
 //!
-//! `mq_markdown::Position::column` counts UTF-8 bytes, not `char`s — see
+//! `mq_markdown::Position::column` counts UTF-16 code units, not `char`s — see
 //! [`super::no_space_in_code`]'s doc comment — so `position` is converted to a char-counted
 //! `Range` through [`crate::text::LineByteIndex::char_column`] before it's used for
 //! [`crate::fix::slice`] or as the diagnostic's own `Range`/`Fix`, or emphasis wrapping multi-byte
@@ -49,16 +49,19 @@ impl Rule for EmphasisStyle {
         crate::walk::walk(doc.nodes.iter(), &mut |node| {
             let Node::Emphasis(_) = node else { return };
             let Some(position) = node.position() else { return };
-            if position.start.line != position.end.line {
+            if (position.start.line as usize) != (position.end.line as usize) {
                 return;
             }
-            let Some(start_column) = byte_index.char_column(position.start.line, position.start.column) else {
+            let Some(start_column) =
+                byte_index.char_column(position.start.line as usize, position.start.column as usize)
+            else {
                 return;
             };
-            let Some(end_column) = byte_index.char_column(position.end.line, position.end.column) else {
+            let Some(end_column) = byte_index.char_column(position.end.line as usize, position.end.column as usize)
+            else {
                 return;
             };
-            let range = Range::single_line(position.start.line, start_column, end_column);
+            let range = Range::single_line(position.start.line as usize, start_column, end_column);
             let Some(raw) = crate::fix::slice(source, &byte_index, range) else {
                 return;
             };
