@@ -27,6 +27,7 @@ jobs:
           components: rustfmt, clippy
           cache: false
           rustflags: ""
+          build-warnings: ""
       - uses: Swatinem/rust-cache@v2.9.2
       - name: Build
         run: cargo build --workspace --all-features --locked
